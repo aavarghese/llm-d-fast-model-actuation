@@ -17,9 +17,8 @@ import logging
 import subprocess
 import time
 
-from utils import parse_request_args
-
 from kubernetes import client, config, watch
+from utils import parse_request_args
 
 # ---------------- Logging setup ----------------
 logger = logging.getLogger(__name__)
