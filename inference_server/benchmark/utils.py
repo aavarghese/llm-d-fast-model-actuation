@@ -68,12 +68,12 @@ def parse_request_args():
     if requester_img:
         logger.info("Requester Image Loaded from ENV: {requester_img}")
     else:  # Force user to pass it as an argument.
-         logger.info("CONTAINER_IMG_REG is not set locally")
-         parser.add_argument(
-             "--image",
-             type=str,
-             required=True,
-             help="Repository for the requester image",
+        logger.info("CONTAINER_IMG_REG is not set locally")
+        parser.add_argument(
+            "--image",
+            type=str,
+            required=True,
+            help="Repository for the requester image",
         )
 
     args = parser.parse_args()
