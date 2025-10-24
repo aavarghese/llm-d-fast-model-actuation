@@ -168,9 +168,7 @@ def main():
     ready_time = wait_for_dual_pods_ready(v1, namespace, requester_name)
 
     total_time = ready_time - start_time
-    logger.info(
-        f"\n🚀 Metric #1: Time from server-requesting pod apply to dual pods ready is {total_time:.2f} seconds\n"
-    )
+    logger.info(f"🚀 Readiness time: {total_time:.2f} seconds\n")
 
     delete_yaml(yaml_file)
 
