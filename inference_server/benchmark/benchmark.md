@@ -6,12 +6,28 @@ The goal is to quantify and compare how quickly a model-serving duo (server-requ
 
 ## Baseline Startup Latency
 
-**Objective:**  
+**Objective:**
 Measure the time from **deployment (server-request submission)** to **dual-pod readiness**.
+
+### Inputs
+
+| Parameter                          | Description                                          |
+| ---------------------------------- | -----------------------------------------------------|
+| `--namespace`                      | Kubernetes namespace where benchmarking occurs       |
+| `--yaml`                           | YAML file describing the dual-pod deployment         |
+| `--num-gpus`           | Number of GPUs to request for the server-providing pod           |
+| `--num-model-variants` | Number of different model variants to deploy during benchmarking |
+
+### Outputs
+
+| Output                 | Description                                                                |
+| ---------------------- | -------------------------------------------------------------------------- |
+| `startup_time`         | Total time from deployment to readiness                                    |
+| `availability_mode`    | Indicates whether the vLLM instance was started cold or resumed from sleep |
 
 **Example Usage**
 ```bash
-python3 inference_server/benchmark/dualpods_time_logs.py \ 
+python3 inference_server/benchmark/dualpods_time_logs.py \
   --namespace benchmarking-dev  \
   --yaml deploy/server-request-minimal.yaml
 ```
@@ -33,32 +49,17 @@ Applying deploy/server-request-minimal.yaml...
 2025-10-22 14:46:28,971 - INFO - 🚀 Metric #1: Time from server-requesting pod apply to dual pods ready is 389.64 seconds
 ```
 
-### Inputs
+## Benchmarking Scenarios (WIP)
 
-| Parameter                          | Description                                                      |
-| ---------------------------------- | ---------------------------------------------------------------- |
-| `--namespace`                      | Kubernetes namespace where benchmarking occurs                   |
-| `--yaml`                           | YAML file describing the dual-pod deployment                   |
-| `--num-gpus`           | Number of GPUs to request for the server-providing pod              |
-| `--num-model-variants` | Number of different model variants to deploy during benchmarking |
-
-### Outputs
-
-| Output                 | Description                                                                |
-| ---------------------- | -------------------------------------------------------------------------- |
-| `startup_time`         | Total time from deployment to readiness                                    |
-| `availability_mode`    | Indicates whether the vLLM instance was started cold or resumed from sleep |                               |
-
-## Benchmarking Scenarios
-
-| Scenario                      | Description                                                                                                       |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Scenario                      | Description                                                   |
+| ----------------------------- | ------------------------------------------------------------- |
 | **Cold Start vLLM Instance**  | Measures latency for creating a new vLLM server from scratch (no caching with and without launcher).                 |
 | **Wake Up Sleeping Instance** | Measures time to wake-up a sleeping instance (with and without launcher).                                        |
 | **Launcher Activation** | Measure end-to-end time from launcher triggering a new instance to full readiness. |
-| **Scale-Up Event**            | Deploys additional requester-provider pairs to handle increased load and measures incremental activation latency. |
-| **Scale-Down Event**          | Evaluate teardown and reactivation time when waking-up sleeping instance.                       |
-| **Recycling Pods**            | Test repeated cycles of scaling up and down to evaluate caching benefits and readiness consistency.             |
+| **Scale-Up Requester Replicas**            | Deploys additional requester-provider pairs to handle increased load and measures incremental activation latency. |
+| **Scale-Down Requester Replicas**          | Evaluate teardown and reactivation time when waking-up sleeping instance.                       |
+| Coming soon| |
+| Coming soon| |
 
 ### Next steps
 
