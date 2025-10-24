@@ -67,7 +67,7 @@ def parse_request_args():
     requester_img = getenv("CONTAINER_IMG_REG")
     if requester_img:
         logger.info("Requester Image Loaded from ENV: {requester_img}")
-    else:    # Force user to pass it as an argument.
+    else:  # Force user to pass it as an argument.
          logger.info("CONTAINER_IMG_REG is not set locally")
          parser.add_argument(
              "--image",
@@ -99,7 +99,7 @@ def replace_repo_variable(requester_image_repo: str, request_yaml_template: str)
     """
     # Check that yaml path exists before invoking sed.
     request_yaml_path = Path(request_yaml_template)
-    if not(request_yaml_path).exists():
+    if not (request_yaml_path).exists():
         raise FileNotFoundError(f"{request_yaml_template} path does not exist!")
 
     # Invoke the replacement in the template for redirection.
