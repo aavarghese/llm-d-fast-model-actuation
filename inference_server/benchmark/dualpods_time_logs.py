@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import argparse
 import logging
 import subprocess
 import time
 
 from kubernetes import client, config, watch
+from utils import parse_request_args
 
 # ---------------- Logging setup ----------------
 logger = logging.getLogger(__name__)
@@ -110,35 +110,10 @@ def wait_for_dual_pods_ready(v1, namespace, podname, timeout=600):
 
 # ---------------- Main ----------------
 def main():
-    parser = argparse.ArgumentParser(
-        description="Benchmarking the Dual-pods readiness time"
-    )
-    parser.add_argument(
-        "--namespace",
-        type=str,
-        default="pool-management-dev",
-        help="Openshift namespace to run benchmark",
-    )
-    parser.add_argument(
-        "--yaml",
-        type=str,
-        default="deploy/server-request.yaml",
-        help="Path to the server-requesting YAML file",
-    )
-    parser.add_argument(
-        "--label",
-        type=str,
-        default="app=dp-example",
-        help="Label selector for server-requesting pod",
-    )
-    args = parser.parse_args()
-
     config.load_kube_config()
     v1 = client.CoreV1Api()
 
-    namespace = args.namespace
-    yaml_file = args.yaml
-    label = args.label
+    namespace, yaml_file, label, image = parse_request_args()
 
     delete_yaml(yaml_file)
 
