@@ -17,7 +17,6 @@ import logging
 import subprocess
 from os import getenv
 from pathlib import Path
-from time import asctime
 from uuid import uuid4
 
 # ---------------- Logging setup ----------------
