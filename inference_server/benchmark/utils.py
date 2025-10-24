@@ -36,6 +36,7 @@ console_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 logger.addHandler(console_handler)
 
+
 def parse_request_args():
     """
     Retrieve the arguments for launching the inference server
