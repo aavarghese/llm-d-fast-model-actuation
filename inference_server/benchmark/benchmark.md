@@ -64,18 +64,18 @@ Applying deploy/server-request-minimal.yaml...
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Introducing New Variant**   | As a ModelService Owner, I can deploy a newly released variant from HuggingFace in anticipation of user requests |
 | **Fast Replica Scale Up**     | As a ModelService Owner, I can scale up the number of active replicas for a variant with minimal latency |
-| **Free Up Cluster Resources** | As a Cluster Operator, I can reduce/deactive resource intensive variants to make space for numerous smaller model variants |
+| **Free Up Cluster Resources** | As a Cluster Operator, I can reduce/deactivate resource intensive variants to make space for numerous smaller model variants |
 | **Resource Request Justification** | As a Workload Owner, I can stress-test my namespace's resources to justify more resource requests (routes, gateways, GPUs) from cluster operator |
-| **Maintenance Planning**      | As a Cluster Operator, I can validate the cluster performance is similar or better after node maintainance schedules and upgrades |
+| **Maintenance Planning**      | As a Cluster Operator, I can validate the cluster performance is similar or better after node maintenance schedules and upgrades |
 
 
 ## Benchmarking Matrix (WIP)
 
 | Scenario                      | Cold Start (No Launcher)  | Cold Start (w/ Launcher)  | Caching (No Launcher) | Caching (w/ Launcher) | Scale Up (No Sleep) | Scale Up (Sleep + GPU Hit/Bind) |
-| ----------------------------- | ------------------------- | ------------------------- | --------------------  | --------------------- | ------------------- | ------------------------------- | 
-| **Introducing New Variant**   |                           |                           |                       |                       |                     |                                 | 
+| ----------------------------- | ------------------------- | ------------------------- | --------------------  | --------------------- | ------------------- | ------------------------------- |
+| **Introducing New Variant**   |                           |                           |                       |                       |                     |                                 |
 | **Fast Replica Scale Up**     |                           |                           |                       |                       |                     |                                 |
-| **Free Up Cluster Resources** |                           |                           |                       |                       |                     |                                 | 
+| **Free Up Cluster Resources** |                           |                           |                       |                       |                     |                                 |
 | **Resource Request Justification** |                      |                           |                       |                       |                     |                                 |
 | **Maintenance Planning**      |                           |                           |                       |                       |                     |                                 |
 
