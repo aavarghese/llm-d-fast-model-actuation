@@ -79,13 +79,6 @@ Applying deploy/server-request-minimal.yaml...
 | **Resource Request Justification** |                      |                           |                       |                       |                     |                                 |
 | **Maintenance Planning**      |                           |                           |                       |                       |                     |                                 |
 
-| Scenario                      | Description                                                   |
-| ----------------------------- | ------------------------------------------------------------- |
-| **Cold Start vLLM Instance**  | Measures latency for creating a new vLLM server from scratch (no caching with and without launcher).                 |
-| **Wake Up Sleeping Instance** | Measures time to wake-up a sleeping instance (with and without launcher).                                        |
-| **Launcher Activation** | Measure end-to-end time from launcher triggering a new instance to full readiness. |
-| **Scale-Up Requester Replicas**            | Deploys additional requester-provider pairs to handle increased load and measures incremental activation latency. |
-| **Scale-Down Requester Replicas**          | Evaluate teardown and reactivation time when waking-up sleeping instance.                       |
 
 ### Next steps
 
