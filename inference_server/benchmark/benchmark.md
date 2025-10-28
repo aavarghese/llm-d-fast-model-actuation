@@ -60,13 +60,13 @@ Applying deploy/server-request-minimal.yaml...
 
 ## Benchmarking Scenarios (WIP)
 
-| Scenario                      | Description                                                   |
-| ----------------------------- | ------------------------------------------------------------- |
+| Scenario                      | Description                                                                                                                                           |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Introducing New Variant**   | As a ModelService Owner, I can deploy a newly released variant from HuggingFace in anticipation of user requests |
 | **Fast Replica Scale Up**     | As a ModelService Owner, I can scale up the number of active replicas for a variant with minimal latency |
 | **Free Up Cluster Resources** | As a Cluster Operator, I can reduce/deactive resource intensive variants to make space for numerous smaller model variants |
-| **Resource Request Justification** | As a Workload Owner, I can stress-test my namespace's resources to justify more resource requests (routes, gateways, GPUs) from cluster owner |
-| **Maintenance Planning**      | As a Cluster Operator, I can stress-test the cluster workloads to guide node maintainance schedules and upgrades |
+| **Resource Request Justification** | As a Workload Owner, I can stress-test my namespace's resources to justify more resource requests (routes, gateways, GPUs) from cluster operator |
+| **Maintenance Planning**      | As a Cluster Operator, I can validate the cluster performance is similar or better after node maintainance schedules and upgrades |
 
 
 ## Benchmarking Matrix (WIP)
