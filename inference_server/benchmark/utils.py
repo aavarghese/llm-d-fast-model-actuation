@@ -14,10 +14,10 @@
 
 import argparse
 import logging
-import subprocess
 from logging import DEBUG, INFO, FileHandler, Formatter, StreamHandler, getLogger
 from os import getenv
 from pathlib import Path
+from subprocess import run as invoke_shell
 from uuid import uuid4
 
 # ---------------- Logging setup ----------------
@@ -117,7 +117,7 @@ def replace_repo_variable(
     updated_request_file = "inf-server-request-" + str(uuid4()) + ".yaml"
     updated_request_file_path = Path(updated_request_file)
     with Path(updated_request_file_path).open(mode="wb") as yaml_fd:
-        subprocess.run(
+        invoke_shell(
             ["sed", "-e", sed_script, request_yaml_template],
             stdout=yaml_fd,
             check=False,
@@ -156,3 +156,12 @@ class BaseLogger:
         Get the custom logger created by the class.
         """
         return self.logger
+
+
+def delete_yaml_resources(yaml_file):
+    """Delete the resources created with the YAML and delete from file system."""
+    logger.info(f"Cleaning up resources from {yaml_file}...")
+    invoke_shell(
+        ["kubectl", "delete", "-f", yaml_file, "--ignore-not-found=true"], check=False
+    )
+    invoke_shell(["rm", yaml_file], check=False)

@@ -13,10 +13,10 @@
 # limitations under the License.
 
 # Standard imports
-from random import randint
-
-# from time import perf_counter
+from subprocess import run as invoke_shell
 from typing import Any, Dict, List, Optional
+
+from kube_op_env import KindKubernetesOps, RemoteKubernetesOps, SimKubernetesOps
 
 # Local imports
 from utils import BaseLogger, parse_request_args, replace_repo_variable
@@ -30,35 +30,55 @@ class DualPodsBenchmark:
         op_mode: str = "kind",
         simulation_delays: Optional[Dict[str, float]] = None,
         log_output_file: str = "metrics.log",
+        cluster_name: str = None,
     ):
         """
         Initialize the benchmark class.
 
         :param op_mode: The operational mode for the benchmark (one of remote, kind, or
                         simulated)
-        :param simulation_delays: Customized delays in secs for the simulated mode
-                                  depending on the scenario
+        :param simulation_delays: Customized delays in secs for the simulated mode.
         """
         logger = BaseLogger(log_output_file, self.__class__.__name__)
         self.logger = logger.get_custom_logger()
         self.logger.info("Logger Type: %s" % (self.logger.name))
         self.op_mode = op_mode
         if op_mode == "kind":  # Default
-            self.logger.info("Operating with kind cluster.")
+
+            # Check that the cluster name is specified.
+            if cluster_name is None:
+                raise ValueError("You must specify a kind cluster name")
+
+            # Check that the kind cluster exists locally.
+            all_clusters = invoke_shell(
+                ["kind", "get", "clusters"],
+                capture_output=True,
+                text=True,
+            ).stdout
+
+            if not (cluster_name in all_clusters.strip("\n")):
+                raise ValueError(f"Kind cluster {cluster_name} does not exist")
+
+            self.logger.info(f"Operating with kind cluster: {cluster_name}")
+
             # Set context with a kind cluster.
+            self.k8_ops = KindKubernetesOps(cluster_name)
+
         elif op_mode == "remote":
             self.logger.info("Operating with remote cluster.")
             # Load config for the remote cluster.
+            self.k8_ops = RemoteKubernetesOps()
+
         elif op_mode == "simulated":
             self.logger.info("Operating in simulated mode.")
             # Load simulation parameters for the particular scenario.
+            self.k8_ops = SimKubernetesOps(self.logger)
         else:
             raise ValueError("Mode must be one of [kind, remote, simulated]")
 
         self.parsed_inputs = self.parse_inputs()
         input_str = self.describe_inputs()
         self.logger.info(input_str)
-        # self.logger.info(f"Parsed Inputs: {self.parsed_inputs}")
         self.results: List[Dict[str, Any]] = []
 
     def describe_inputs(self):
@@ -84,90 +104,57 @@ class DualPodsBenchmark:
         )
 
         return ns, request_yaml_file, requester_pod_label, requester_img_tag
-        # return {
-        #    "namespace": ns, "yaml": request_yaml_file,
-        #    "label": requester_pod_label, "tag": requester_img_tag
-        #    }
-
-    def configure_scenario(self, scenario: str, **kwargs) -> Dict[str, Any]:
-        """
-        Configure benchmark settings based on the given scenario.
-
-        :param scenario: Scenario name (e.g., "Fast Replica Scale Up")
-        :param kwargs: Scenario-specific params such as number of GPUs, variants, etc.
-        """
-        config = {"scenario": scenario, "params": kwargs}
-
-        if scenario == "Introducing New Variant":
-            config["description"] = "Deploying new model variant"
-            config["num_model_variants"] = kwargs.get("num_model_variants", 1)
-        elif scenario == "Fast Replica Scale Up":
-            config["description"] = "Scale up replicas"
-            config["replicas"] = kwargs.get("replicas", 2)
-        else:  # Deploy the given yaml and report.
-            config["description"] = "Generic benchmark"
-            config["replicas"] = kwargs.get("replicas", 1)
-
-        return config
 
     def run_benchmark(
-        self, scenario: str, iterations: int = 1, timeout: int = 600, **scenario_kwargs
+        self, iterations: int = 1, timeout: int = 600
     ) -> List[Dict[str, Any]]:
         """
-        Run the benchmark for a given scenario.
+        Run the benchmark.
 
-        :param scenario: The scenario name.
         :param iterations: Number of iterations for run.
         :param timeout: Timeout for each run in seconds.
-        :param scenario_kwargs: Parameters for configuring the scenario.
         :return: List of result dictionaries.
         """
-        # config = self.configure_scenario(scenario, **scenario_kwargs)
         ns, yaml_file, pod_label, image = self.parsed_inputs
 
         self.results = []
         for i in range(iterations):
-            self.logger.info(f"Running iteration {i+1} for scenario '{scenario}'")
+            self.logger.info(f"Running iteration {i+1}")
 
-            # start_time = perf_counter()
             try:
                 self.logger.info(f"Applying YAML: {yaml_file}.")
-                # TODO: Implement application for kind v remote v simulation.
-                # apply_yaml_file(yaml_file)
+                self.k8_ops.apply_yaml(yaml_file)
 
                 # Check for pod readiness.
-                # podname = "my-request"
-                # rq_ready, provider_ready, provider_mode = wait_for_dual_pods_ready(ns,
-                #    podname, timeout)
+                podname = "my-request"
+                rq_ready, prv_ready, prv_mode = self.k8_ops.wait_for_dual_pods_ready(
+                    ns, podname, timeout
+                )
                 # TODO: Handle readiness check for M1 vs M2 vs M3 pods.
-                # total_time = ready_time
-                total_time = randint(1, 400)
 
                 # Compile the result.
                 result = {
                     "iteration": i + 1,
-                    "scenario": scenario,
-                    "rq_time": total_time,
-                    # "prv_time": total_time,
-                    # "availability_mode": provider_mode,
-                    "availability_mode": "cold",
+                    # "scenario": scenario,
+                    "rq_time": rq_ready,
+                    "prv_time": prv_ready,
+                    "availability_mode": prv_mode,
                     "success": True,
                 }
             except Exception as e:
                 self.logger.error(f"Iteration {i+1} failed with error: {e}")
                 result = {
                     "iteration": i + 1,
-                    "scenario": scenario,
+                    # "scenario": scenario,
                     "rq_time": None,
-                    # "prv_time": total_time,
+                    "prv_time": None,
                     "availability_mode": "No Server Providing Pod Available",
-                    "success": True,
+                    "success": False,
                     "error": e.__str__(),
                 }
             finally:
                 self.logger.info(f"Finally deleting YAML file: {yaml_file}")
-                # TODO: Implement deletion for kind v remote v simulation.
-                # delete_yaml(yaml_file)
+                self.k8_ops.delete_yaml(yaml_file)
 
             self.results.append(result)
 
@@ -186,8 +173,9 @@ class DualPodsBenchmark:
         rq_times = [
             run["rq_time"] for run in success_runs if run["rq_time"] is not None
         ]
-        # TODO: Uncomment once we have run times for the provider pods.
-        # prv_times = [run["prv_time"] for run in success_runs if run["prv_time"] is not None]
+        prv_times = [
+            run["prv_time"] for run in success_runs if run["prv_time"] is not None
+        ]
 
         summary = {
             "Total Runs": len(self.results),
@@ -198,9 +186,11 @@ class DualPodsBenchmark:
             ),
             "Min Requester Time": min(rq_times) if rq_times else None,
             "Max Requester Time": max(rq_times) if rq_times else None,
-            # "Average Provider Time": sum(prv_times) / len(prv_times) if prv_times else None,
-            # "Min Provider Time": min(prv_times) if prv_times else None,
-            # "Max Provider Time": max(prv_times) if prv_times else None,
+            "Average Provider Time": (
+                sum(prv_times) / len(prv_times) if prv_times else None
+            ),
+            "Min Provider Time": min(prv_times) if prv_times else None,
+            "Max Provider Time": max(prv_times) if prv_times else None,
             "All Results": self.results,
         }
 
@@ -216,10 +206,19 @@ class DualPodsBenchmark:
 
 
 if __name__ == "__main__":
-    log_path = "my_custom_logger.log"
-    benchmark = DualPodsBenchmark()
+    # kind_log_path = "kind_logger.log"
+    # kind_benchmark = DualPodsBenchmark(
+    #    "kind", cluster_name="fmatest", log_output_file=kind_log_path
+    # )
+    sim_log_path = "sim_logger.log"
+    sim_benchmark = DualPodsBenchmark("simulated", log_output_file=sim_log_path)
+    remote_log_path = "remote_logger.log"
+    remote_benchmark = DualPodsBenchmark("remote", log_output_file=remote_log_path)
+    # all_benchmarks = [sim_benchmark, kind_benchmark]
+    all_benchmarks = [sim_benchmark, remote_benchmark]
 
-    # Run an example benchmark
-    kwargs = {"num_model_variants": 3}
-    benchmark.run_benchmark("Introducing New Variant", 3, **kwargs)
-    benchmark.logger.info(benchmark.get_results())
+    # Run example benchmarks
+    for benchmark in all_benchmarks:
+        results = benchmark.run_benchmark()
+        benchmark.logger.info(results)
+        # benchmark.run_benchmark("Introducing New Variant", 3, **kwargs)
