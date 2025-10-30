@@ -14,7 +14,8 @@
 
 # Standard imports
 from random import randint
-#from time import perf_counter
+
+# from time import perf_counter
 from typing import Any, Dict, List, Optional
 
 # Local imports
