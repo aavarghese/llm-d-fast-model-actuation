@@ -16,7 +16,7 @@
 from subprocess import run as invoke_shell
 from typing import Any, Dict, List, Optional
 
-from kube_op_env import KindKubernetesOps, RemoteKubernetesOps, SimKubernetesOps
+from kube_ops import KindKubernetesOps, RemoteKubernetesOps, SimKubernetesOps
 
 # Local imports
 from utils import BaseLogger, parse_request_args, replace_repo_variable
