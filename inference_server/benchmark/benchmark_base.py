@@ -269,12 +269,12 @@ if __name__ == "__main__":
     # kind_benchmark = DualPodsBenchmark(
     #    "kind", cluster_name="fmatest", log_output_file=kind_log_path
     # )
-    sim_log_path = "sim_logger.log"
-    sim_benchmark = DualPodsBenchmark("simulated", log_output_file=sim_log_path)
-    # remote_log_path = "remote_logger.log"
-    # remote_benchmark = DualPodsBenchmark("remote", log_output_file=remote_log_path)
+    #sim_log_path = "sim_logger.log"
+    #sim_benchmark = DualPodsBenchmark("simulated", log_output_file=sim_log_path)
+    remote_log_path = "remote_logger.log"
+    remote_benchmark = DualPodsBenchmark("remote", log_output_file=remote_log_path)
     # all_benchmarks = [sim_benchmark, kind_benchmark]
-    all_benchmarks = [sim_benchmark]
+    all_benchmarks = [remote_benchmark]
 
     # Run example benchmarks
     for benchmark in all_benchmarks:
