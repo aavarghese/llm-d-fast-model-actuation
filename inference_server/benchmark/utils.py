@@ -59,12 +59,6 @@ def parse_request_args():
         help="Path to the server-requesting YAML template file",
     )
     parser.add_argument(
-        "--label",
-        type=str,
-        default="app=dp-example",
-        help="Label selector for server-requesting pod",
-    )
-    parser.add_argument(
         "--cleanup",
         type=bool,
         default=True,
@@ -81,6 +75,18 @@ def parse_request_args():
         type=str,
         default="fmaas-platform-eval.fmaas.res.ibm.com",
         help="Cluster domain for Prometheus GPU metrics query",
+    )
+    parser.add_argument(
+        "--model-path",
+        type=str,
+        help="Path to JSON file containing models for new_variant scenario",
+    )
+    parser.add_argument(
+        "--scenario",
+        type=str,
+        default="scaling",
+        choices=["baseline", "scaling", "new_variant"],
+        help="Benchmark scenario to run (default: scaling)",
     )
 
     # Check for a container image env variables before adding to the parser.
