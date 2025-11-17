@@ -21,6 +21,11 @@ from time import sleep, time
 from typing import Any, Dict, List, Optional
 
 from kube_ops import KindKubernetesOps, RemoteKubernetesOps, SimKubernetesOps
+from scenarios import (
+    run_new_variant_scenario,
+    run_scaling_scenario,
+    run_standard_scenario,
+)
 
 # Local imports
 from utils import BaseLogger, parse_request_args, replace_repo_variables
@@ -79,13 +84,12 @@ class DualPodsBenchmark:
         parsed_inputs = self.parse_inputs()
         self.namespace = parsed_inputs[0]
         self.yaml_template_file = parsed_inputs[1]
-        self.requester_pod_label = parsed_inputs[2]
-        self.requester_img_tag = parsed_inputs[3]
-        self.cleanup_enabled = parsed_inputs[4]
-        self.iterations = parsed_inputs[5]
-        self.cluster_domain = parsed_inputs[6]
-        parsed_model_path = parsed_inputs[7]
-        self.scenario = parsed_inputs[8]
+        self.requester_img_tag = parsed_inputs[2]
+        self.cleanup_enabled = parsed_inputs[3]
+        self.iterations = parsed_inputs[4]
+        self.cluster_domain = parsed_inputs[5]
+        parsed_model_path = parsed_inputs[6]
+        self.scenario = parsed_inputs[7]
 
         # Use model_path from parameter if provided, otherwise from parsed args
         self.model_path = model_path if model_path is not None else parsed_model_path
@@ -97,19 +101,18 @@ class DualPodsBenchmark:
         """Get pretty print version of the user inputs"""
         pretty_print_str = "Namespace: {} \n".format(self.namespace)
         pretty_print_str += "Request YAML File: {}\n".format(self.yaml_template_file)
-        pretty_print_str += "Requester Pod Label: {} \n".format(self.requester_pod_label)
         pretty_print_str += "Requester Pod Image: {} \n".format(self.requester_img_tag)
-        pretty_print_str += "Cleanup all pods at end of run: {}".format(
+        pretty_print_str += "Cleanup all pods at end of run: {} \n".format(
             self.cleanup_enabled
         )
         if self.iterations > 1:
-            pretty_print_str += "Requested Iterations: {}".format(self.iterations)
+            pretty_print_str += "Requested Iterations: {} \n".format(self.iterations)
         else:
-            pretty_print_str += "Default Iterations: {}".format(self.iterations)
+            pretty_print_str += "Default Iterations: {} \n".format(self.iterations)
         pretty_print_str += "Cluster domain: {} \n".format(self.cluster_domain)
-        pretty_print_str += "Scenario: {} \n".format(self.scenario)
+        pretty_print_str += "Scenario: {}".format(self.scenario)
         if self.model_path:
-            pretty_print_str += "Model Path: {} \n".format(self.model_path)
+            pretty_print_str += "\nModel Path: {}".format(self.model_path)
 
         return pretty_print_str
 
@@ -118,7 +121,6 @@ class DualPodsBenchmark:
         all_args = parse_request_args()
         ns = all_args.namespace
         yaml_template = all_args.yaml
-        requester_pod_label = all_args.label
         requester_img = all_args.image
         requester_img_tag = all_args.tag
         cleanup = all_args.cleanup
@@ -126,8 +128,13 @@ class DualPodsBenchmark:
         cluster_domain = (
             all_args.cluster_domain if hasattr(all_args, "cluster_domain") else None
         )
-        model_path = getattr(all_args, 'model_path', None)
-        scenario = getattr(all_args, 'scenario', 'scaling')
+        model_path = getattr(all_args, "model_path", None)
+        scenario = getattr(all_args, "scenario", "scaling")
+
+        if scenario == "new_variant" and not model_path:
+            raise ValueError(
+                "The --model-path argument is required when scenario=new_variant"
+            )
 
         # Generate the request YAML from template and image details.
         request_yaml_template_file = replace_repo_variables(
@@ -140,7 +147,6 @@ class DualPodsBenchmark:
         return (
             ns,
             request_yaml_template_file,
-            requester_pod_label,
             requester_img_tag,
             cleanup,
             iterations,
@@ -174,7 +180,6 @@ class DualPodsBenchmark:
         self,
         timeout: int = 1000,
         scenario: str = None,
-        cleanup: bool = True,
     ) -> List[Dict[str, Any]]:
         """
         Run the benchmark.
@@ -184,7 +189,6 @@ class DualPodsBenchmark:
                         If None, uses the scenario from command line arguments.
         :return: List of result dictionaries.
         """
-        from scenarios import run_standard_scenario, run_scaling_scenario, run_new_variant_scenario
 
         # Use provided scenario or default to instance scenario
         benchmark_scenario = scenario if scenario is not None else self.scenario
@@ -194,8 +198,9 @@ class DualPodsBenchmark:
         elif benchmark_scenario == "new_variant":
             return run_new_variant_scenario(self, timeout, self.yaml_template_file)
 
-        return run_standard_scenario(self, timeout, benchmark_scenario, self.yaml_template_file)
-
+        return run_standard_scenario(
+            self, timeout, benchmark_scenario, self.yaml_template_file
+        )
 
     def get_results(self) -> Dict[str, Any]:
         """
@@ -211,11 +216,11 @@ class DualPodsBenchmark:
             run["rq_time"] for run in success_runs if run["rq_time"] is not None
         ]
 
-        # For scaling scenarios, only count hits from the 
+        # For scaling scenarios, only count hits from the
         # only phase that can wake up sleeping provider pods
         if any(run.get("scenario") == "scaling" for run in self.results):
             scale_up_again_runs = [
-                run for run in success_runs if run.get("phase") == "1_to_2_again"
+                run for run in success_runs if run.get("phase") == "up_again"
             ]
             hit_runs = [
                 run for run in scale_up_again_runs if run["availability_mode"] == "Hit"
@@ -239,11 +244,12 @@ class DualPodsBenchmark:
         summary = {
             "total_runs": len(self.results),
             "successful_runs": len(success_runs),
+            "failed_runs": len(self.results) - len(success_runs),
             "hits": hits,
+            "total_hit_runs": hit_percent_base,
             "hit_percent": (
                 int((hits / hit_percent_base) * 100) if hit_percent_base > 0 else 0
             ),
-            "failed_runs": len(self.results) - len(success_runs),
             "rq_min": min(rq_times) if rq_times else None,
             "rq_max": max(rq_times) if rq_times else None,
             "rq_avg": (sum(rq_times) / len(rq_times) if rq_times else None),
@@ -264,6 +270,7 @@ class DualPodsBenchmark:
         success_runs = summary["successful_runs"]
         failed_runs = summary["failed_runs"]
         hits = summary["hits"]
+        total_hit_runs = summary["total_hit_runs"]
         hit_percent = summary["hit_percent"]
         rq_min = summary["rq_min"]
         rq_max = summary["rq_max"]
@@ -281,7 +288,7 @@ class DualPodsBenchmark:
         run_str += f"Failed Runs: {failed_runs}\n"
         rq_stats = f"Requester Pods \n\tMin: {rq_min}s, \n\tMax: {rq_max}s"
         rq_stats += f"\n\tAverage: {rq_avg}s\n"
-        avail_stats = f"Hits: {hits}/{success_runs} ({hit_percent}%)\n"
+        avail_stats = f"Hits: {hits}/{total_hit_runs} ({hit_percent}%)\n"
 
         if hits > 0:
             hit_stats = (
@@ -293,7 +300,7 @@ class DualPodsBenchmark:
         summary_str = "".join([run_str, rq_stats, avail_stats])
         self.logger.info(summary_str)
 
-    def _cleanup_intermediate_files(self):
+    def cleanup_intermediate_files(self):
         """Clean up intermediate YAML files created during benchmark iterations."""
         for yaml_file in self.intermediate_files:
             try:

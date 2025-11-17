@@ -59,12 +59,6 @@ def parse_request_args():
         help="Path to the server-requesting YAML template file",
     )
     parser.add_argument(
-        "--label",
-        type=str,
-        default="app=dp-example",
-        help="Label selector for server-requesting pod",
-    )
-    parser.add_argument(
         "--cleanup",
         type=bool,
         default=True,
