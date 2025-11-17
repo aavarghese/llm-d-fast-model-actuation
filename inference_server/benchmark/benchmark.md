@@ -18,14 +18,18 @@ Measure the time from **deployment (server-request submission)** to **dual-pod r
 
 ### Inputs
 
-| Parameter                          | Description                                          |
-| ---------------------------------- | -----------------------------------------------------|
-| `--namespace`                      | Kubernetes namespace where benchmarking occurs       |
-| `--yaml`                           | YAML file describing the dual-pod deployment         |
-| `--image`                 | Image repository for the inference server requester container |
-| `--tag`                   | Image tag to use for the inference server requester container |
-| `--num-gpus`           | Number of GPUs to request for the server-providing pod           |
-| `--num-model-variants` | Number of different model variants to deploy during benchmarking |
+| Parameter           | Type   | Required | Default                                 | Description                                                                                            |
+| ------------------ | ------ | -------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `--namespace`      | `str`  | **Yes**  | —                                       | Openshift namespace to run benchmark                                      |
+| `--yaml`           | `str`  | **Yes**  | —                                       | Path to the server-requesting YAML template file              |
+| `--image`          | `str`  | **Yes*** | —                                       | Image repository for the requester pod. Required *only if* `CONTAINER_IMG_REG` env var is **not** set |
+| `--tag`            | `str`  | **Yes*** | —                                       | Image tag for the requester pod. Required *only if* `CONTAINER_IMG_VERSION` env var is **not** set    |
+| `--cleanup`        | `bool` | No       | `True`                                  | Whether to clean up created resources after the benchmark                                             |
+| `--iterations`     | `int`  | No       | `1`                                     | Number of times to run each benchmark scenario                                                        |
+| `--cluster-domain` | `str`  | No       | `fmaas-platform-eval.fmaas.res.ibm.com` | Cluster domain for Prometheus GPU metrics query                                                           |
+| `--model-path`     | `str`  | No       | `None`                                  | Path to JSON file containing models for scenario (used only in the `new_variant` scenario).                           |
+| `--scenario`       | `str`  | No       | `"scaling"`                             | Benchmark scenario to run: `baseline`, `scaling`, or `new_variant`.                                    |
+
 
 ### Outputs
 
@@ -36,9 +40,7 @@ Measure the time from **deployment (server-request submission)** to **dual-pod r
 
 **Example Usage**
 ```bash
-python3 inference_server/benchmark/dualpods_time_logs.py \
-  --namespace benchmarking-dev  \
-  --yaml deploy/server-request-minimal.yaml
+python3 inference_server/benchmark/bechmark_base.py --namespace <str> --yaml <str> --cleanup <bool,default:True> --iterations <int, default:1> --cluster-domain <str> --model-path <str> --scenario <str, default:scaling> --image <str> --tag <str>
 ```
 
 **Output Example (Subject to Change)**
