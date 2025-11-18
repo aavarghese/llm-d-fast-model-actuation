@@ -21,6 +21,13 @@ from statistics import median
 from subprocess import run as invoke_shell
 from typing import Any, Dict, List, Optional
 
+from kube_ops import KindKubernetesOps, RemoteKubernetesOps, SimKubernetesOps
+from scenarios import (
+    run_new_variant_scenario,
+    run_scaling_scenario,
+    run_standard_scenario,
+)
+
 # Local imports
 from kube_ops import KindKubernetesOps, RemoteKubernetesOps, SimKubernetesOps
 from scenarios import (
