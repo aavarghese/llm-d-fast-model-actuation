@@ -13,37 +13,17 @@
 # limitations under the License.
 
 # Standard imports.
-import logging
-from datetime import datetime
 from json import loads
 from pathlib import Path
 from time import sleep, time
 from typing import Any, Dict, List
 
 # Local imports.
-from benchmark_base import DualPodsBenchmark
-from utils import parse_request_args, replace_repo_variables
-
-# ---------------- Logging setup ----------------
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-
-file_handler = logging.FileHandler(f"metrics-{datetime.now()}.log")
-file_handler.setLevel(logging.DEBUG)
-file_handler.setFormatter(formatter)
-
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.INFO)
-console_handler.setFormatter(formatter)
-
-logger.addHandler(file_handler)
-logger.addHandler(console_handler)
+from utils import replace_repo_variables
 
 
 def run_standard_scenario(
-    benchmark: DualPodsBenchmark,
+    benchmark: Any,
     timeout: int,
     scenario: str,
     yaml_file: str = None,
@@ -141,7 +121,7 @@ def run_standard_scenario(
 
 
 def run_scaling_scenario(
-    benchmark: DualPodsBenchmark,
+    benchmark: Any,
     timeout: int,
     yaml_file: str = None,
 ) -> List[Dict[str, Any]]:
@@ -277,20 +257,21 @@ def _run_scaling_phase(
 
 
 def run_new_variant_scenario(
-    benchmark: DualPodsBenchmark, timeout: int, yaml_file: str = None
+    benchmark: Any, timeout: int, yaml_file: str = None
 ) -> List[Dict[str, Any]]:
     """
     Run the scenario to introduce a new model variant.
     :param benchmark: The benchmark instance to run the scenario on.
     :param timeout: The timeout in seconds for the execution of the pod requests.
-    :param yaml_file: The YAML template file to use (optional, uses benchmark default if None).
+    :param yaml_file: The YAML template file to use (optional, uses benchmark default
+        if None).
 
     :return: A list with the results for the different models.
     """
     results = []
 
     if not benchmark.model_path:
-        logger.error("model_path not provided for new_variant scenario")
+        benchmark.logger.error("model_path not provided for new_variant scenario")
         return results
 
     yaml_template = yaml_file if yaml_file else benchmark.yaml_template_file
@@ -299,19 +280,20 @@ def run_new_variant_scenario(
     all_models = None
     models_abs_path = Path(benchmark.model_path).absolute()
     if not Path(models_abs_path).exists():
-        logger.info(f"Path to models {models_abs_path} does not exist!")
+        benchmark.logger.info(f"Path to models {models_abs_path} does not exist!")
         return results
     else:
         with Path(models_abs_path).open(mode="rb") as model_json_fd:
             all_models = loads(model_json_fd.read())["models"]
-            logger.info(f"All Models: {all_models}")
+            benchmark.logger.info(f"All Models: {all_models}")
 
     # Generate the general template with container image repository and tag.
     for model in all_models:
         model_parts = model.split("/")
         model_registry = model_parts[0]
         model_repo = model_parts[1]
-        logger.info(f"Model Registry: {model_registry}, Model Repo: {model_repo}")
+        model_info = f"Model Registry: {model_registry}, Model Repo: {model_repo}"
+        benchmark.logger.info(model_info)
         model_template = replace_repo_variables(
             benchmark.requester_img_tag.split(":")[0],  # image repo
             benchmark.requester_img_tag,  # full image tag
