@@ -12,22 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 
 # Standard imports
+from datetime import datetime
+from json import loads
 from pathlib import Path
+from statistics import median
 from subprocess import run as invoke_shell
-from time import sleep, time
 from typing import Any, Dict, List, Optional
 
+# Local imports
 from kube_ops import KindKubernetesOps, RemoteKubernetesOps, SimKubernetesOps
 from scenarios import (
     run_new_variant_scenario,
     run_scaling_scenario,
     run_standard_scenario,
 )
-
-# Local imports
 from utils import BaseLogger, parse_request_args, replace_repo_variables
 
 
@@ -253,6 +253,7 @@ class DualPodsBenchmark:
             "rq_min": min(rq_times) if rq_times else None,
             "rq_max": max(rq_times) if rq_times else None,
             "rq_avg": (sum(rq_times) / len(rq_times) if rq_times else None),
+            "rq_median": median(rq_times) if rq_times else None,
             "hit_prv_min": min(hit_rq_times) if hit_rq_times else None,
             "hit_prv_max": max(hit_rq_times) if hit_rq_times else None,
             "hit_prv_avg": (
@@ -275,6 +276,7 @@ class DualPodsBenchmark:
         rq_min = summary["rq_min"]
         rq_max = summary["rq_max"]
         rq_avg = summary["rq_avg"]
+        rq_median = summary["rq_median"]
         hit_prv_min = summary["hit_prv_min"]
         hit_prv_max = summary["hit_prv_max"]
         hit_prv_avg = summary["hit_prv_avg"]
@@ -287,7 +289,8 @@ class DualPodsBenchmark:
         )
         run_str += f"Failed Runs: {failed_runs}\n"
         rq_stats = f"Requester Pods \n\tMin: {rq_min}s, \n\tMax: {rq_max}s"
-        rq_stats += f"\n\tAverage: {rq_avg}s\n"
+        rq_stats += f"\n\tAverage: {rq_avg}s"
+        rq_stats += f"\n\tMedian: {rq_median}s\n"
         avail_stats = f"Hits: {hits}/{total_hit_runs} ({hit_percent}%)\n"
 
         if hits > 0:
@@ -358,8 +361,9 @@ class DualPodsBenchmark:
                 text=True,
                 check=True,
             )
+            self.logger.info(f"Query Result: \n{query_result}\n")
 
-            gpu_data = json.loads(query_result.stdout)
+            gpu_data = loads(query_result.stdout)
             gpu_list = []
             for result in gpu_data.get("data", {}).get("result", []):
                 gpu_info = {
@@ -381,7 +385,9 @@ class DualPodsBenchmark:
 
 if __name__ == "__main__":
     # Create benchmark instance (automatically parses command line arguments)
-    benchmark = DualPodsBenchmark("remote", log_output_file="benchmark.log")
+    date_stamp = datetime.now().isoformat(timespec="minutes")
+    log_output_file = f"benchmark-{date_stamp}.log"
+    benchmark = DualPodsBenchmark("remote", log_output_file=log_output_file)
 
     # Run benchmark using scenario from command line args (defaults to "scaling")
     results = benchmark.run_benchmark(timeout=1000)

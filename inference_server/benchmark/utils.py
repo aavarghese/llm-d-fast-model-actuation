@@ -26,7 +26,8 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 
-file_handler = logging.FileHandler(f"metrics-{datetime.now()}.log")
+date_stamp = str(datetime.now().isoformat(timespec="minutes"))
+file_handler = logging.FileHandler(f"metrics-log-utils-{date_stamp}.log")
 file_handler.setLevel(logging.DEBUG)
 file_handler.setFormatter(formatter)
 
