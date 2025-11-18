@@ -24,6 +24,7 @@ from subprocess import CalledProcessError
 from subprocess import run as invoke_shell
 from time import perf_counter, sleep
 from typing import Any, Dict, Optional
+from uuid import uuid4
 
 # Third party imports.
 from kubernetes import client, config, watch
@@ -101,7 +102,6 @@ def wait_for_dual_pods_ready(
     rs_name,
     timeout=600,
     expected_replicas=1,
-    suffix="dual",
 ):
     """
     Wait for both dual pods to be ready and return timing information.
@@ -110,7 +110,6 @@ def wait_for_dual_pods_ready(
     :param rs_name: The name of the replicaset whose pods are to be waited.
     :param timeout: The max time to wait for all the pods to be ready.
     :param expected_replicas: The number of replicas expected for scaling.
-    :param suffix: The suffix added to distinguish requester pods from provider pods.
     """
     start = perf_counter()
     elapsed = 0
@@ -257,8 +256,18 @@ class KubernetesOps(ABC):
 
     @abstractmethod
     def wait_for_dual_pods_ready(
-        self, ns: str, podname: str, timeout: int, expected_replicas: int = 1
+        self, ns: str, *args: Any, **kwargs: Dict[Any, Any]
     ) -> tuple:
+        pass
+
+    @abstractmethod
+    def scale_replicaset(
+        self,
+        request_yaml: str,
+        expected_replicas: int,
+        *args: Any,
+        **kwargs: Dict[Any, Any],
+    ):
         pass
 
     @abstractmethod
@@ -378,7 +387,6 @@ class RemoteKubernetesOps(KubernetesOps):
             podname,
             timeout,
             expected_replicas=expected_replicas,
-            suffix="dual",
         )
 
     def delete_pod(self, namespace: str, pod_name: str) -> None:
@@ -405,14 +413,20 @@ class SimKubernetesOps(KubernetesOps):
     def delete_yaml(self, yaml_file: str) -> None:
         self.logger.info(f"[SIMULATED] Deleting resources from {yaml_file}")
 
+    def scale_replicaset(self, yaml_file: str, expected_replicas: int):
+        self.logger.info(f"[SIMULATED] Scaled for {yaml_file} to {expected_replicas}")
+
     def wait_for_dual_pods_ready(
         self,
         ns: str,
-        podname: str,
+        rs_name: str,
         timeout: int,
         expected_replicas: int,
         context: Dict[str, Any] = None,
     ) -> tuple:
+
+        self.logger.info(f"[SIMULATED] Waiting on ReplicaSet: {rs_name}")
+
         # Simulate readiness time based on contextual delay or defaults.
         if context is not None and context["Delay"]:
             rq_delay = context["Delay"]
@@ -424,7 +438,6 @@ class SimKubernetesOps(KubernetesOps):
             rq_delay = self.simulated_delays[mode]
 
         # Set the provider pod delay to be close to the requester delay.
-        prv_delay = rq_delay + 1
         self.logger.info(
             f"[SIMULATED] Waiting for pods in {ns}... Ready after {rq_delay}s"
         )
@@ -432,7 +445,12 @@ class SimKubernetesOps(KubernetesOps):
         # Sleep a tiny amount to simulate async behavior.
         sleep(0.01)
 
-        return rq_delay, prv_delay, mode, None, None
+        # Generate random info for the assigned node and accelerator.
+        node_name = uuid4()
+        provider_pod_name = uuid4()
+        accelerator_info = uuid4()
+
+        return rq_delay, mode, provider_pod_name, node_name, accelerator_info
 
     def delete_pod(self, namespace: str, pod_name: str) -> None:
         self.logger.info(

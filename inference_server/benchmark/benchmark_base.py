@@ -90,6 +90,7 @@ class DualPodsBenchmark:
         self.cluster_domain = parsed_inputs[5]
         parsed_model_path = parsed_inputs[6]
         self.scenario = parsed_inputs[7]
+        self.max_replicas = parsed_inputs[8]
 
         # Use model_path from parameter if provided, otherwise from parsed args
         self.model_path = model_path if model_path is not None else parsed_model_path
@@ -111,8 +112,12 @@ class DualPodsBenchmark:
             pretty_print_str += "Default Iterations: {} \n".format(self.iterations)
         pretty_print_str += "Cluster domain: {} \n".format(self.cluster_domain)
         pretty_print_str += "Scenario: {}".format(self.scenario)
+
         if self.model_path:
             pretty_print_str += "\nModel Path: {}".format(self.model_path)
+
+        if self.max_replicas > 1:
+            pretty_print_str += "\nRequested Max Replicas: {}".format(self.max_replicas)
 
         return pretty_print_str
 
@@ -130,6 +135,7 @@ class DualPodsBenchmark:
         )
         model_path = getattr(all_args, "model_path", None)
         scenario = getattr(all_args, "scenario", "scaling")
+        max_replicas = all_args.max_replicas
 
         if scenario == "new_variant" and not model_path:
             raise ValueError(
@@ -153,6 +159,7 @@ class DualPodsBenchmark:
             cluster_domain,
             model_path,
             scenario,
+            max_replicas,
         )
 
     def create_request_yaml(self, rs_name: str, yaml_template_file: str) -> str:

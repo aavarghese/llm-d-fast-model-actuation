@@ -89,6 +89,12 @@ def parse_request_args():
         choices=["baseline", "scaling", "new_variant"],
         help="Benchmark scenario to run (default: scaling)",
     )
+    parser.add_argument(
+        "--max-replicas",
+        type=int,
+        default=1,
+        help="The number of replicas to scale up to (default: 1)",
+    )
 
     # Check for a container image env variables before adding to the parser.
     requester_img = getenv("CONTAINER_IMG_REG")
