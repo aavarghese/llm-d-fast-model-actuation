@@ -92,7 +92,7 @@ def parse_request_args():
     parser.add_argument(
         "--max-replicas",
         type=int,
-        default=1,
+        default=2,
         help="The number of replicas to scale up to (default: 1)",
     )
 
