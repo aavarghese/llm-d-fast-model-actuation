@@ -55,40 +55,24 @@ def run_standard_scenario(
             benchmark.intermediate_files.append(request_yaml)
 
             try:
-                # Query GPU usage before iteration
-                benchmark.logger.info(f"=== GPU Usage Before Iteration {iter_num} ===")
-                benchmark.query_gpu_usage()
+                # Query GPU usage only for emulated or real GPUs before iteration.
+                if benchmark.op_mode != "simulated":
+                    benchmark.logger.info(
+                        f"=== GPU Usage Before Iteration {iter_num} ==="
+                    )
+                    benchmark.query_gpu_usage()
 
                 benchmark.logger.debug(f"Applying YAML: {request_yaml}")
                 benchmark.k8_ops.apply_yaml(request_yaml)
 
-                # Check for pod readiness.
-                (
-                    rq_ready,
-                    prv_mode,
-                    provider_pod_name,
-                    node_name,
-                    accelerator_info,
-                ) = benchmark.k8_ops.wait_for_dual_pods_ready(
-                    benchmark.namespace, rs_name, timeout, 1
+                # Scale up
+                max_replicas = benchmark.max_replicas
+                result = _run_scaling_phase(
+                    benchmark, request_yaml, rs_name, timeout, max_replicas, "up"
                 )
-                # Track provider pods created in cold start mode for cleanup
-                if prv_mode == "Cold" and provider_pod_name:
-                    if not hasattr(benchmark, "provider_pods"):
-                        benchmark.provider_pods = []
-                    benchmark.provider_pods.append(provider_pod_name)
-                    benchmark.logger.debug(
-                        f"Added provider pod {provider_pod_name} to cleanup list"
-                    )
+                result["iteration"] = iter_num
+                result["scenario"] = benchmark.scenario
 
-                # Compile the result.
-                result = {
-                    "iteration": iter_num,
-                    "scenario": scenario,
-                    "rq_time": rq_ready,
-                    "availability_mode": prv_mode,
-                    "success": True,
-                }
             except Exception as e:
                 benchmark.logger.error(f"Iteration {i+1} failed with error: {e}")
                 result = {
@@ -141,18 +125,21 @@ def run_scaling_scenario(
             request_yaml = benchmark.create_request_yaml(rs_name, yaml_template)
             benchmark.intermediate_files.append(request_yaml)
 
-            benchmark.logger.info(
-                f"=== GPU Usage Before Scaling Iteration {iter_num} ==="
-            )
-            benchmark.query_gpu_usage()
+            # Query GPU usage only for emulated or real GPUs.
+            if benchmark.op_mode != "simulated":
+                benchmark.logger.info(
+                    f"=== GPU Usage Before Scaling Iteration {iter_num} ==="
+                )
+                benchmark.query_gpu_usage()
 
             # Apply the initial deployment at 0 replicas
             benchmark.logger.debug(f"Applying initial YAML: {request_yaml}")
             benchmark.k8_ops.apply_yaml(request_yaml)
 
             # Scale up
+            max_replicas = benchmark.max_replicas
             result = _run_scaling_phase(
-                benchmark, request_yaml, rs_name, timeout, 2, "up"
+                benchmark, request_yaml, rs_name, timeout, max_replicas, "up"
             )
             result["iteration"] = iter_num
             benchmark.results.append(result)
@@ -166,12 +153,15 @@ def run_scaling_scenario(
 
             # Slow down to ensure any goner requester pods do not taint number of
             # initial ready pods for the scale up again.
-            benchmark.logger.debug("Slowing down by 10 secs for stale pods to go away")
-            sleep(10)
+            if benchmark.op_mode != "simulated":
+                benchmark.logger.debug(
+                    "Slowing down by 10 secs for stale pods to go away"
+                )
+                sleep(10)
 
             # Scale up again
             result = _run_scaling_phase(
-                benchmark, request_yaml, rs_name, timeout, 2, "up_again"
+                benchmark, request_yaml, rs_name, timeout, max_replicas, "up_again"
             )
             result["iteration"] = iter_num
             benchmark.results.append(result)
