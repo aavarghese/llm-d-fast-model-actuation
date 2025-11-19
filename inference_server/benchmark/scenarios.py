@@ -71,6 +71,7 @@ def run_standard_scenario(
                     benchmark, request_yaml, rs_name, timeout, max_replicas, "up"
                 )
                 result["iteration"] = iter_num
+                result["scenario"] = benchmark.scenario
 
             except Exception as e:
                 benchmark.logger.error(f"Iteration {i+1} failed with error: {e}")
