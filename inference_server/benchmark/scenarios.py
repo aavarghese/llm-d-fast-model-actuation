@@ -65,33 +65,13 @@ def run_standard_scenario(
                 benchmark.logger.debug(f"Applying YAML: {request_yaml}")
                 benchmark.k8_ops.apply_yaml(request_yaml)
 
-                # Check for pod readiness.
-                (
-                    rq_ready,
-                    prv_mode,
-                    provider_pod_name,
-                    node_name,
-                    accelerator_info,
-                ) = benchmark.k8_ops.wait_for_dual_pods_ready(
-                    benchmark.namespace, rs_name, timeout, 1
+                # Scale up
+                max_replicas = benchmark.max_replicas
+                result = _run_scaling_phase(
+                    benchmark, request_yaml, rs_name, timeout, max_replicas, "up"
                 )
-                # Track provider pods created in cold start mode for cleanup
-                if prv_mode == "Cold" and provider_pod_name:
-                    if not hasattr(benchmark, "provider_pods"):
-                        benchmark.provider_pods = []
-                    benchmark.provider_pods.append(provider_pod_name)
-                    benchmark.logger.debug(
-                        f"Added provider pod {provider_pod_name} to cleanup list"
-                    )
+                result["iteration"] = iter_num
 
-                # Compile the result.
-                result = {
-                    "iteration": iter_num,
-                    "scenario": scenario,
-                    "rq_time": rq_ready,
-                    "availability_mode": prv_mode,
-                    "success": True,
-                }
             except Exception as e:
                 benchmark.logger.error(f"Iteration {i+1} failed with error: {e}")
                 result = {
