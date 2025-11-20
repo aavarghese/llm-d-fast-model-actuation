@@ -19,6 +19,7 @@ from time import sleep, time
 from typing import Any, Dict, List
 
 # Local imports.
+from benchmark_diagnostics import IterationResult
 from utils import replace_repo_variables
 
 
@@ -70,19 +71,22 @@ def run_standard_scenario(
                 result = _run_scaling_phase(
                     benchmark, request_yaml, rs_name, timeout, max_replicas, "up"
                 )
-                result["iteration"] = iter_num
-                result["scenario"] = benchmark.scenario
+                # TODO: Check whether the iteration result failed to ensure no cleanup
+                # is performed.
+                result.iteration = iter_num
+                result.scenario = benchmark.scenario
 
             except Exception as e:
                 benchmark.logger.error(f"Iteration {i+1} failed with error: {e}")
-                result = {
-                    "iteration": iter_num,
-                    "scenario": scenario,
-                    "rq_time": None,
-                    "availability_mode": "No Server Providing Pod Available",
-                    "success": False,
-                    "error": e.__str__(),
-                }
+                result = IterationResult(
+                    None,
+                    "No Server Providing Pod Available",
+                    False,
+                    error=e.__str__(),
+                    scenario=scenario,
+                    phase="up",
+                    iteration=iter_num,
+                )
             finally:
                 if cleanup:
                     benchmark.logger.debug(
@@ -141,14 +145,20 @@ def run_scaling_scenario(
             result = _run_scaling_phase(
                 benchmark, request_yaml, rs_name, timeout, max_replicas, "up"
             )
-            result["iteration"] = iter_num
+
+            # TODO: Check whether the iteration result failed to ensure no cleanup
+            # is performed.
+            result.iteration = iter_num
             benchmark.results.append(result)
 
             # Scale down
             result = _run_scaling_phase(
                 benchmark, request_yaml, rs_name, timeout, 1, "down"
             )
-            result["iteration"] = iter_num
+
+            # TODO: Check whether the iteration result failed to ensure no cleanup
+            # is performed.
+            result.iteration = iter_num
             benchmark.results.append(result)
 
             # Slow down to ensure any goner requester pods do not taint number of
@@ -163,7 +173,10 @@ def run_scaling_scenario(
             result = _run_scaling_phase(
                 benchmark, request_yaml, rs_name, timeout, max_replicas, "up_again"
             )
-            result["iteration"] = iter_num
+
+            # TODO: Check whether the iteration result failed to ensure no cleanup
+            # is performed.
+            result.iteration = iter_num
             benchmark.results.append(result)
 
         finally:
@@ -205,9 +218,7 @@ def _run_scaling_phase(
         (
             rq_ready,
             prv_mode,
-            provider_pod_name,
-            node_name,
-            accelerator_info,
+            provider_pods,
         ) = benchmark.k8_ops.wait_for_dual_pods_ready(
             benchmark.namespace,
             rs_name,
@@ -215,35 +226,32 @@ def _run_scaling_phase(
             expected_pods,
         )
 
-        # Track provider pods created in cold start mode for cleanup
-        if prv_mode == "Cold" and provider_pod_name:
-            if not hasattr(benchmark, "provider_pods"):
-                benchmark.provider_pods = []
-            benchmark.provider_pods.append(provider_pod_name)
-            benchmark.logger.debug(
-                f"Added provider pod {provider_pod_name} to cleanup list"
-            )
+        # Track the creation mode of the last provider pod for hit rate computation.
+        prv_mode = None
 
-        return {
-            "scenario": "scaling",
-            "phase": phase,
-            "rq_time": rq_ready,
-            "availability_mode": prv_mode,
-            "success": rq_ready is not None,
-        }
+        # Track provider pods created in cold start mode for cleanup
+        for pod in provider_pods:
+            benchmark.logger.info(f"Check Mode on Pod: {pod}")
+            if pod.prv_mode == "Cold":
+                if not hasattr(benchmark, "provider_pods"):
+                    benchmark.provider_pods = []
+                provider_pod_name = pod.provider
+                benchmark.provider_pods.append(pod.provider_pod_name)
+                benchmark.logger.debug(
+                    f"Added provider pod {provider_pod_name} to cleanup list"
+                )
+
+        success = rq_ready is not None
+        iter_result = IterationResult(rq_ready, prv_mode, success, phase=phase)
+
+        return iter_result
 
     except TimeoutError as e:
         benchmark.logger.warning(
             f"Scaling step '{phase}' timed out for request {rs_name}: {e}"
         )
-        return {
-            "scenario": "scaling",
-            "phase": phase,
-            "rq_time": None,
-            "availability_mode": "timeout",
-            "success": False,
-            "error": str(e),
-        }
+
+        return IterationResult(None, "timeout", False, error=e.__str__(), phase=phase)
 
 
 def run_new_variant_scenario(
