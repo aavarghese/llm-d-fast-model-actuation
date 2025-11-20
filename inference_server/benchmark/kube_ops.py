@@ -29,7 +29,6 @@ from uuid import uuid4
 from benchmark_diagnostics import (
     BenchmarkDiagnosis,
     BoundProviderPodInfo,
-    IterationResult,
     ScenarioResult,
     ScenarioStatus,
 )
@@ -263,10 +262,7 @@ def wait_for_dual_pods_ready(
                         rq_ready,
                         prv_mode,
                         provider_pods,
-                        # node_name,
-                        # accelerator_info,
                     )
-                    return IterationResult(rq_ready, prv_mode, success=True)
 
             elapsed = perf_counter() - start
 

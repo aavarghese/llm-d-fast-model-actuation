@@ -252,13 +252,6 @@ def _run_scaling_phase(
                     f"Added provider pod {provider_pod_name} to cleanup list"
                 )
 
-        # return {
-        #    "scenario": "scaling",
-        #    "phase": phase,
-        #    "rq_time": rq_ready,
-        #    "availability_mode": prv_mode,
-        #    "success": rq_ready is not None,
-        # }
         success = rq_ready is not None
         iter_result = IterationResult(rq_ready, prv_mode, success, phase=phase)
         return iter_result
