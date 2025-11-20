@@ -18,9 +18,8 @@ from pathlib import Path
 from time import sleep, time
 from typing import Any, Dict, List
 
-from benchmark_diagnostics import IterationResult
-
 # Local imports.
+from benchmark_diagnostics import IterationResult
 from utils import replace_repo_variables
 
 
@@ -79,14 +78,6 @@ def run_standard_scenario(
 
             except Exception as e:
                 benchmark.logger.error(f"Iteration {i+1} failed with error: {e}")
-                # result = {
-                #    "iteration": iter_num,
-                #    "scenario": scenario,
-                #    "rq_time": None,
-                #    "availability_mode": "No Server Providing Pod Available",
-                #    "success": False,
-                #    "error": e.__str__(),
-                # }
                 result = IterationResult(
                     None,
                     "No Server Providing Pod Available",
@@ -228,8 +219,6 @@ def _run_scaling_phase(
             rq_ready,
             prv_mode,
             provider_pods,
-            # node_name,
-            # accelerator_info,
         ) = benchmark.k8_ops.wait_for_dual_pods_ready(
             benchmark.namespace,
             rs_name,
@@ -254,24 +243,15 @@ def _run_scaling_phase(
 
         success = rq_ready is not None
         iter_result = IterationResult(rq_ready, prv_mode, success, phase=phase)
+
         return iter_result
 
     except TimeoutError as e:
         benchmark.logger.warning(
             f"Scaling step '{phase}' timed out for request {rs_name}: {e}"
         )
-        # return {
-        #    "scenario": "scaling",
-        #    "phase": phase,
-        #    "rq_time": None,
-        #    "availability_mode": "timeout",
-        #    "success": False,
-        #    "error": str(e),
-        # }
-        iter_result = IterationResult(
-            None, "timeout", False, error=e.__str__(), phase=phase
-        )
-        return iter_result
+
+        return IterationResult(None, "timeout", False, error=e.__str__(), phase=phase)
 
 
 def run_new_variant_scenario(

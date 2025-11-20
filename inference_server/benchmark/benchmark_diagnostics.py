@@ -19,8 +19,6 @@ from logging import Logger
 from pathlib import Path
 from subprocess import run as invoke_shell
 
-# Local imports
-
 
 class ScenarioStatus(Enum):
     SUCCESS = 1
