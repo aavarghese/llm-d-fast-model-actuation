@@ -26,6 +26,13 @@ from time import perf_counter, sleep
 from typing import Any, Dict, Optional
 from uuid import uuid4
 
+from benchmark_diagnostics import (
+    BenchmarkDiagnosis,
+    BoundProviderPodInfo,
+    ScenarioResult,
+    ScenarioStatus,
+)
+
 # Third party imports.
 from kubernetes import client, config, watch
 
@@ -114,7 +121,13 @@ def wait_for_dual_pods_ready(
     start = perf_counter()
     elapsed = 0
     ready_pods = set()
-    provider_pod_name = None
+    provider_pods = []
+
+    # Track the set of pods that do not reach ready state in case of failure.
+    unready_pods = set()
+
+    # Track the dual pod controller pod in case of failure.
+    dual_pod_controller = None
 
     logger.info(f"Waiting for pods of ReplicaSet: {rs_name}")
 
@@ -127,7 +140,6 @@ def wait_for_dual_pods_ready(
 
     # Initialize the variables to be returned
     rq_ready = None
-    # prv_ready = None
     prv_mode = COLD_START_MODE
     node_name = None
     accelerator_info = None
@@ -139,6 +151,10 @@ def wait_for_dual_pods_ready(
         pods = v1.list_namespaced_pod(namespace=namespace).items
         for pod in pods:
             ex_podname = pod.metadata.name
+
+            if dual_pod_controller is None and "dpctlr" in ex_podname:
+                dual_pod_controller = ex_podname
+
             pod_annotations = pod.metadata.annotations
             is_requester = REQUESTER_PATCH_ANNOTATION in pod_annotations
             if rs_name in ex_podname and check_ready(pod) and is_requester:
@@ -171,6 +187,17 @@ def wait_for_dual_pods_ready(
                     logger.info(f"Skipping NEWLY ready pod: {podname}")
                     continue
 
+                # Add pod if it is not already in the list of unready pods.
+                is_relevant_pod = podname not in ready_pods
+                if (
+                    (rs_name in podname)
+                    and is_relevant_pod
+                    and (podname not in unready_pods)
+                ):
+                    unready_pods.add(podname)
+                    logger.debug(f"UNREADY pod added: {podname}")
+                    logger.debug(f"Updated UNREADY pods: {unready_pods}")
+
                 # Get the labels to filter out provider pods.
                 labels = pod.metadata.labels
 
@@ -200,7 +227,8 @@ def wait_for_dual_pods_ready(
                         if binding_match:
                             ready_pods.add(podname)
                             prv_mode = COLD_START_MODE
-                            provider_pod_name = dual_pod
+                            # provider_pod_name = dual_pod
+                            provider_pods.append(dual_pod)
                             logger.info(
                                 f"{dual_pod}:{podname} bound through a Cold start on "
                                 f"node {node_name} with accelerator {accelerator_info}"
@@ -213,6 +241,17 @@ def wait_for_dual_pods_ready(
                                 f"node {node_name} with accelerator {accelerator_info}"
                             )
 
+                        # Add the provider pod info to the list of bound pods.
+                        provider_info = BoundProviderPodInfo(
+                            podname, dual_pod, prv_mode, node_name, accelerator_info
+                        )
+                        provider_pods.append(provider_info)
+
+                        # Remove the pod pair from the unready pods.
+                        unready_pods.remove(podname)
+                        unready_pods.discard(dual_pod)
+                        logger.info(f"{podname}:{dual_pod} removed from UNREADY set")
+
                 if len(ready_pods) == expected_replicas:
                     end = perf_counter()
                     w.stop()
@@ -222,9 +261,7 @@ def wait_for_dual_pods_ready(
                     return (
                         rq_ready,
                         prv_mode,
-                        provider_pod_name,
-                        node_name,
-                        accelerator_info,
+                        provider_pods,
                     )
 
             elapsed = perf_counter() - start
@@ -236,6 +273,16 @@ def wait_for_dual_pods_ready(
             sleep(1)  # Quick retry
             elapsed = perf_counter() - start
 
+    # Collect diagnostics data before raising the time out error.
+    logger.info(f"Unready Pods: {unready_pods}, DPC: {dual_pod_controller}")
+    failed_scenario = ScenarioResult(
+        ScenarioStatus.FAILURE,
+        unready_pods,
+        namespace,
+        dual_pod_controller=dual_pod_controller,
+        failed_rs_name=rs_name,
+    )
+    BenchmarkDiagnosis(logger).collect_diagnostics(failed_scenario)
     raise TimeoutError(f"Timed out after {timeout}s waiting for both pods to be Ready.")
 
 
@@ -379,12 +426,12 @@ class RemoteKubernetesOps(KubernetesOps):
         scale_replicaset(yaml_file, replicas)
 
     def wait_for_dual_pods_ready(
-        self, ns: str, podname: str, timeout: int, expected_replicas: int
+        self, ns: str, rs_name: str, timeout: int, expected_replicas: int
     ) -> tuple:
         return wait_for_dual_pods_ready(
             self.v1_api,
             ns,
-            podname,
+            rs_name,
             timeout,
             expected_replicas=expected_replicas,
         )
@@ -446,11 +493,16 @@ class SimKubernetesOps(KubernetesOps):
         sleep(0.01)
 
         # Generate random info for the assigned node and accelerator.
+        requester_pod_name = uuid4()
         node_name = uuid4()
-        provider_pod_name = uuid4()
+        provider_pod_name = [uuid4()]
         accelerator_info = uuid4()
+        provider_info = BoundProviderPodInfo(
+            requester_pod_name, provider_pod_name, mode, node_name, accelerator_info
+        )
+        provider_pods = [provider_info]
 
-        return rq_delay, mode, provider_pod_name, node_name, accelerator_info
+        return rq_delay, mode, provider_pods
 
     def delete_pod(self, namespace: str, pod_name: str) -> None:
         self.logger.info(
