@@ -218,34 +218,30 @@ class DualPodsBenchmark:
         if not self.results:
             return {}
 
-        success_runs = [run for run in self.results if run["success"]]
+        # success_runs = [run for run in self.results if run["success"]]
+        success_runs = [run for run in self.results if run.success]
         rq_times = [
-            run["rq_time"] for run in success_runs if run["rq_time"] is not None
+            # run["rq_time"] for run in success_runs if run["rq_time"] is not None
+            run.rq_time
+            for run in success_runs
+            if run.rq_time is not None
         ]
 
         # For scaling scenarios, only count hits from the
         # only phase that can wake up sleeping provider pods
-        if any(run.get("scenario") == "scaling" for run in self.results):
+        if any(run.scenario == "scaling" for run in self.results):
             scale_up_again_runs = [
-                run for run in success_runs if run.get("phase") == "up_again"
+                run for run in success_runs if run.phase == "up_again"
             ]
-            hit_runs = [
-                run for run in scale_up_again_runs if run["availability_mode"] == "Hit"
-            ]
+            hit_runs = [run for run in scale_up_again_runs if run.avail_mode == "Hit"]
             hits = len(hit_runs)
-            hit_rq_times = [
-                run["rq_time"] for run in hit_runs if run["rq_time"] is not None
-            ]
+            hit_rq_times = [run.rq_time for run in hit_runs if run.rq_time is not None]
             hit_percent_base = len(scale_up_again_runs)
         else:
             # For non-scaling scenarios, use all successful runs
-            hit_runs = [
-                run for run in success_runs if run["availability_mode"] == "Hit"
-            ]
+            hit_runs = [run for run in success_runs if run.avail_mode == "Hit"]
             hits = len(hit_runs)
-            hit_rq_times = [
-                run["rq_time"] for run in hit_runs if run["rq_time"] is not None
-            ]
+            hit_rq_times = [run.rq_time for run in hit_runs if run.rq_time is not None]
             hit_percent_base = len(success_runs)
 
         summary = {
@@ -397,5 +393,5 @@ if __name__ == "__main__":
     benchmark = DualPodsBenchmark("remote", log_output_file=log_output_file)
 
     # Run benchmark using scenario from command line args (defaults to "scaling")
-    results = benchmark.run_benchmark(timeout=1000)
+    results = benchmark.run_benchmark(timeout=7)
     benchmark.pretty_print_results()
