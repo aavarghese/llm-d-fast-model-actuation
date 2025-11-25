@@ -42,6 +42,7 @@ def run_baseline_scenario(
     cleanup = benchmark.cleanup_enabled
     iterations = benchmark.iterations
     scenario = benchmark.scenario
+    max_replicas = benchmark.max_replicas
     yaml_template = yaml_file if yaml_file else benchmark.yaml_template_file
     try:
         for i in range(iterations):
@@ -59,26 +60,28 @@ def run_baseline_scenario(
                 benchmark.k8_ops.apply_yaml(request_yaml)
 
                 # Scale up
-                max_replicas = benchmark.max_replicas
-                result = _run_scaling_phase(
-                    benchmark, request_yaml, rs_name, timeout, max_replicas, "up"
+                _run_scaling_phase(
+                    benchmark,
+                    request_yaml,
+                    rs_name,
+                    timeout,
+                    max_replicas,
+                    iter_num,
+                    scenario,
+                    "up",
                 )
                 # TODO: Check whether the iteration result failed to ensure no cleanup
                 # is performed.
-                result.iteration = iter_num
-                result.scenario = scenario
-
             except Exception as e:
                 benchmark.logger.error(f"Iteration {i+1} failed with error: {e}")
                 result = IterationResult(
-                    None,
-                    "No Server Providing Pod Available",
-                    False,
+                    success=False,
                     error=e.__str__(),
                     scenario=scenario,
                     phase="up",
                     iteration=iter_num,
                 )
+                benchmark.results.append(result)
             finally:
                 if cleanup:
                     benchmark.logger.debug(
@@ -86,8 +89,6 @@ def run_baseline_scenario(
                     )
                     benchmark.k8_ops.delete_yaml(request_yaml)
                     benchmark.cleanup_resources()
-
-            benchmark.results.append(result)
 
     finally:
         # Clean up intermediate YAML files created during benchmark
@@ -110,6 +111,8 @@ def run_scaling_scenario(
     benchmark.results = []
     cleanup = benchmark.cleanup_enabled
     iterations = benchmark.iterations
+    scenario = benchmark.scenario
+    max_replicas = benchmark.max_replicas
     yaml_template = yaml_file if yaml_file else benchmark.yaml_template_file
 
     for i in range(iterations):
@@ -127,15 +130,19 @@ def run_scaling_scenario(
             benchmark.k8_ops.apply_yaml(request_yaml)
 
             # Scale up
-            max_replicas = benchmark.max_replicas
-            result = _run_scaling_phase(
-                benchmark, request_yaml, rs_name, timeout, max_replicas, "up"
+            _run_scaling_phase(
+                benchmark,
+                request_yaml,
+                rs_name,
+                timeout,
+                max_replicas,
+                iter_num,
+                scenario,
+                "up",
             )
 
             # TODO: Check whether the iteration result failed to ensure no cleanup
             # is performed.
-            result.iteration = iter_num
-            benchmark.results.append(result)
 
             # Scale down
             benchmark.logger.debug("=== Scaling step down to 1 replica ===")
@@ -150,15 +157,28 @@ def run_scaling_scenario(
                 sleep(10)
 
             # Scale up again
-            result = _run_scaling_phase(
-                benchmark, request_yaml, rs_name, timeout, max_replicas, "up_again"
+            _run_scaling_phase(
+                benchmark,
+                request_yaml,
+                rs_name,
+                timeout,
+                max_replicas,
+                iter_num,
+                scenario,
+                "up_again",
             )
 
             # TODO: Check whether the iteration result failed to ensure no cleanup
             # is performed.
-            result.iteration = iter_num
+        except Exception as e:
+            benchmark.logger.error(f"Iteration {iter_num} failed with error: {e}")
+            result = IterationResult(
+                success=False,
+                error=e.__str__(),
+                scenario=scenario,
+                iteration=iter_num,
+            )
             benchmark.results.append(result)
-
         finally:
             # Delete the YAML resources from the cluster
             if cleanup:
@@ -182,13 +202,14 @@ def _run_scaling_phase(
     rs_name: str,
     timeout: int,
     expected_pods: int,
+    iteration_num: str,
+    scenario: str,
     phase: str,
-):
+) -> None:
     """
     Scale the replicaset, wait for readiness,
     track provider pods, and output a result dict.
     """
-
     benchmark.logger.debug(
         f"=== Scaling step '{phase}' to {expected_pods} replicas ==="
     )
@@ -200,11 +221,7 @@ def _run_scaling_phase(
         benchmark.query_gpu_usage()
 
     try:
-        (
-            rq_ready,
-            prv_mode,
-            provider_pods,
-        ) = benchmark.k8_ops.wait_for_dual_pods_ready(
+        provider_pods = benchmark.k8_ops.wait_for_dual_pods_ready(
             benchmark.namespace,
             rs_name,
             timeout,
@@ -214,7 +231,7 @@ def _run_scaling_phase(
         # Track provider pods created in cold start mode for cleanup
         for pod in provider_pods:
             benchmark.logger.debug(f"Check Mode on Pod: {pod}")
-            if pod.prv_mode == "Cold":
+            if pod.avail_mode == "Cold":
                 if not hasattr(benchmark, "provider_pods"):
                     benchmark.provider_pods = []
                 provider_pod_name = pod.provider
@@ -222,18 +239,29 @@ def _run_scaling_phase(
                 benchmark.logger.debug(
                     f"Added provider pod {provider_pod_name} to cleanup list"
                 )
-
-        success = rq_ready is not None
-        iter_result = IterationResult(rq_ready, prv_mode, success, phase=phase)
-
-        return iter_result
+            iter_result = IterationResult(
+                rq_time=pod.rq_time,
+                avail_mode=pod.avail_mode,
+                success=True,
+                iteration=iteration_num,
+                scenario=scenario,
+                phase=phase,
+            )
+            benchmark.results.append(iter_result)
 
     except TimeoutError as e:
         benchmark.logger.warning(
             f"Scaling step '{phase}' timed out for request {rs_name}: {e}"
         )
 
-        return IterationResult(None, "timeout", False, error=e.__str__(), phase=phase)
+        iter_result = IterationResult(
+            success=False,
+            error=e.__str__(),
+            iteration=iteration_num,
+            scenario=scenario,
+            phase=phase,
+        )
+        benchmark.results.append(iter_result)
 
 
 def run_new_variant_scenario(
