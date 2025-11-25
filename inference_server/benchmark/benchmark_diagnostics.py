@@ -31,7 +31,8 @@ class BoundProviderPodInfo:
 
     requester: str
     provider: str
-    prv_mode: str
+    rq_time: int
+    avail_mode: str
     node: str
     accelerator_info: str
 
@@ -40,14 +41,14 @@ class BoundProviderPodInfo:
 class IterationResult:
     """A datastore for the result of a benchmark iteration."""
 
-    rq_time: int
-    avail_mode: str
     success: bool
     # Defaults to empty when all goes well.
     error: str = ""
     scenario: str = "scaling"
     phase: str = ""
     iteration: str = ""
+    rq_time: int = 0
+    avail_mode: str = ""
 
 
 @dataclass

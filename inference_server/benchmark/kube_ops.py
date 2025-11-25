@@ -139,8 +139,6 @@ def wait_for_dual_pods_ready(
         return False
 
     # Initialize the variables to be returned
-    rq_ready = None
-    prv_mode = COLD_START_MODE
     node_name = None
     accelerator_info = None
 
@@ -230,18 +228,23 @@ def wait_for_dual_pods_ready(
                         binding_match = podname in dual_pod
                         if binding_match:
                             ready_pods.add(podname)
-                            prv_mode = COLD_START_MODE
+                            avail_mode = COLD_START_MODE
                             logger.info(
                                 f"{dual_pod}:{podname} bound through a COLD START."
                             )
                         else:
                             ready_pods.add(podname)
-                            prv_mode = HIT_MODE
+                            avail_mode = HIT_MODE
                             logger.info(f"{dual_pod}:{podname} bound through a HIT.")
 
                         # Add the provider pod info to the list of bound pods.
                         provider_info = BoundProviderPodInfo(
-                            podname, dual_pod, prv_mode, node_name, accelerator_info
+                            podname,
+                            dual_pod,
+                            rq_ready,
+                            avail_mode,
+                            node_name,
+                            accelerator_info,
                         )
                         provider_pods.append(provider_info)
 
@@ -256,11 +259,7 @@ def wait_for_dual_pods_ready(
                     logger.info(
                         f"✅ All pods {ready_pods} Ready after {end - start:.2f}s"
                     )
-                    return (
-                        rq_ready,
-                        prv_mode,
-                        provider_pods,
-                    )
+                    return provider_pods
 
             elapsed = perf_counter() - start
 
