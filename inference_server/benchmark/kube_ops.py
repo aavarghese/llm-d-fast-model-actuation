@@ -63,6 +63,7 @@ HIT_MODE = "Hit"
 DUAL_POD_TOTAL = 2
 DUAL_LABEL_KEY = "dual-pods.llm-d.ai/dual"
 REQUESTER_PATCH_ANNOTATION = "dual-pod.llm-d.ai/server-patch"
+ACCELERATOR_ANNOTATION = "dual-pods.llm-d.ai/accelerators"
 
 
 # ---------------- Helper functions ----------------
@@ -139,8 +140,6 @@ def wait_for_dual_pods_ready(
         return False
 
     # Initialize the variables to be returned
-    rq_ready = None
-    prv_mode = COLD_START_MODE
     node_name = None
     accelerator_info = None
 
@@ -213,9 +212,7 @@ def wait_for_dual_pods_ready(
                         # Capture node and accelerator info
                         node_name = pod.spec.node_name if pod.spec else None
                         accelerator_info = (
-                            pod.metadata.annotations.get(
-                                "dual-pods.llm-d.ai/accelerators"
-                            )
+                            pod.metadata.annotations.get(ACCELERATOR_ANNOTATION)
                             if pod.metadata.annotations
                             else None
                         )
@@ -230,18 +227,23 @@ def wait_for_dual_pods_ready(
                         binding_match = podname in dual_pod
                         if binding_match:
                             ready_pods.add(podname)
-                            prv_mode = COLD_START_MODE
+                            avail_mode = COLD_START_MODE
                             logger.info(
                                 f"{dual_pod}:{podname} bound through a COLD START."
                             )
                         else:
                             ready_pods.add(podname)
-                            prv_mode = HIT_MODE
+                            avail_mode = HIT_MODE
                             logger.info(f"{dual_pod}:{podname} bound through a HIT.")
 
                         # Add the provider pod info to the list of bound pods.
                         provider_info = BoundProviderPodInfo(
-                            podname, dual_pod, prv_mode, node_name, accelerator_info
+                            podname,
+                            dual_pod,
+                            rq_ready,
+                            avail_mode,
+                            node_name,
+                            accelerator_info,
                         )
                         provider_pods.append(provider_info)
 
@@ -257,9 +259,10 @@ def wait_for_dual_pods_ready(
                         f"✅ All pods {ready_pods} Ready after {end - start:.2f}s"
                     )
                     return (
-                        rq_ready,
-                        prv_mode,
-                        provider_pods,
+                        ScenarioResult(
+                            status=ScenarioStatus.SUCCESS, provider_pods=provider_pods
+                        ),
+                        None,
                     )
 
             elapsed = perf_counter() - start
@@ -273,15 +276,17 @@ def wait_for_dual_pods_ready(
 
     # Collect diagnostics data before raising the time out error.
     logger.debug(f"Unready Pods: {unready_pods}, DPC: {dual_pod_controller}")
-    failed_scenario = ScenarioResult(
-        ScenarioStatus.FAILURE,
-        unready_pods,
-        namespace,
+    scenario_result = ScenarioResult(
+        status=ScenarioStatus.FAILURE,
+        provider_pods=provider_pods,
+        unready_pods=unready_pods,
+        namespace=namespace,
         dual_pod_controller=dual_pod_controller,
         failed_rs_name=rs_name,
     )
-    BenchmarkDiagnosis(logger).collect_diagnostics(failed_scenario)
-    raise TimeoutError(f"Timed out after {timeout}s waiting for both pods to be Ready.")
+    BenchmarkDiagnosis(logger).collect_diagnostics(scenario_result)
+    err = TimeoutError(f"Timed out after {timeout}s waiting for both pods to be Ready.")
+    return scenario_result, err
 
 
 class KubernetesOps(ABC):

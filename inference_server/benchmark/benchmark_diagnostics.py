@@ -18,6 +18,7 @@ from enum import Enum
 from logging import Logger
 from pathlib import Path
 from subprocess import run as invoke_shell
+from typing import List
 
 
 class ScenarioStatus(Enum):
@@ -31,7 +32,8 @@ class BoundProviderPodInfo:
 
     requester: str
     provider: str
-    prv_mode: str
+    rq_time: int
+    avail_mode: str
     node: str
     accelerator_info: str
 
@@ -40,25 +42,30 @@ class BoundProviderPodInfo:
 class IterationResult:
     """A datastore for the result of a benchmark iteration."""
 
-    rq_time: int
-    avail_mode: str
     success: bool
     # Defaults to empty when all goes well.
     error: str = ""
     scenario: str = "scaling"
     phase: str = ""
     iteration: str = ""
+    rq_time: int = 0
+    avail_mode: str = ""
 
 
 @dataclass
 class ScenarioResult:
     """A datastore for the status and results of a benchmark scenario."""
 
+    # Status is updated in case of failure, otherwise defaults to Success.
     status: ScenarioStatus
+    # The list of bound provider pods.
+    provider_pods: List
     # Empty set when all goes well.
-    unready_pods: set
-    namespace: str
-    dual_pod_controller: str
+    unready_pods: set = ()
+    # Defaults to empty (no need to pass back) when all goes well.
+    namespace: str = ""
+    # Defaults to empty (no need to pass back) when all goes well.
+    dual_pod_controller: str = ""
     # Defaults to empty string when all goes well.
     failed_rs_name: str = ""
 
