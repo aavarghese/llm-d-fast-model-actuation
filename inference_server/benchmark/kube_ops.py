@@ -258,7 +258,6 @@ def wait_for_dual_pods_ready(
                     logger.info(
                         f"✅ All pods {ready_pods} Ready after {end - start:.2f}s"
                     )
-                    # return provider_pods
                     return (
                         ScenarioResult(
                             status=ScenarioStatus.SUCCESS, provider_pods=provider_pods
