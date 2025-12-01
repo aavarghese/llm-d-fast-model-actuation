@@ -248,7 +248,7 @@ def _run_scaling_phase(
         )
 
         for pod in readiness_result.unready_pods:
-            if "dual" in pod:
+            if "dual" not in pod:
                 iter_result = IterationResult(
                     success=False,
                     error=err.__str__(),

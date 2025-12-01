@@ -192,6 +192,7 @@ def wait_for_dual_pods_ready(
                     (rs_name in podname)
                     and is_relevant_pod
                     and (podname not in unready_pods)
+                    and is_requester
                 ):
                     unready_pods.add(podname)
                     logger.debug(f"UNREADY pod added: {podname}")
