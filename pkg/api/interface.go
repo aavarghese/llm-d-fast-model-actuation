@@ -89,6 +89,18 @@ const AcceleratorsAnnotationName string = "dual-pods.llm-d.ai/accelerators"
 // a server-providing Pod is launcher-based.
 const LauncherBasedAnnotationName string = "dual-pods.llm-d.ai/launcher-based"
 
+// PolicyNameAnnotationName is the annotation key used on launcher pods
+// to indicate which `LauncherPoolPolicy` created / manages them.
+const PolicyNameAnnotationName string = "pool-policy.llmd.ai/policy-name"
+
+// LauncherConfigAnnotationName is the annotation key used on launcher pods
+// to indicate which `LauncherConfig` name they correspond to.
+const LauncherConfigAnnotationName string = "pool-policy.llmd.ai/launcher-config"
+
+// IdleLauncherAnnotationName is an annotation set on launcher pods for easy
+// discovery; value is typically "true". Set to false when dual-pods starts using it.
+const IdleLauncherAnnotationName string = "pool-policy.llmd.ai/idle-launcher"
+
 // DualLabelName is the name of a label that the dual-pods controller
 // maintains on the server-requesting and server-providing Pods.
 // While bound, this label is present and its value is the name of the

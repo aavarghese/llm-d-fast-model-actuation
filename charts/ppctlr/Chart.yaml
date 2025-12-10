@@ -1,0 +1,14 @@
+apiVersion: v2
+description: The pool-policy (ppctlr) controller
+home: https://github.com/llm-d-incubation/llm-d-fast-model-actuation
+keywords:
+- llm-d
+- pool-policy
+- controller
+maintainers:
+- name: Ops Team
+name: ppctlr
+sources:
+- https://github.com/llm-d-incubation/llm-d-fast-model-actuation
+type: application
+version: 0.1.0
