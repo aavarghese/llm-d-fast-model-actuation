@@ -1,0 +1,26 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: fma-immutable-fields
+  annotations:
+    description: "Deny mutation of controller-managed annotations and labels unless performed by an FMA controller service account."
+spec:
+  failurePolicy: Fail
+  match:
+    resources:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        kinds: ["Pod"]
+        operations: ["Update"]
+  validation:
+    expression: |
+      (
+        (oldObject.metadata.annotations['dual-pods.llm-d.ai/requester'] != object.metadata.annotations['dual-pods.llm-d.ai/requester']) ||
+        (oldObject.metadata.annotations['dual-pods.llm-d.ai/nominal'] != object.metadata.annotations['dual-pods.llm-d.ai/nominal']) ||
+        (oldObject.metadata.annotations['dual-pods.llm-d.ai/status'] != object.metadata.annotations['dual-pods.llm-d.ai/status']) ||
+        (oldObject.metadata.annotations['dual-pods.llm-d.ai/accelerators'] != object.metadata.annotations['dual-pods.llm-d.ai/accelerators']) ||
+        (oldObject.metadata.annotations['dual-pods.llm-d.ai/launcher-based'] != object.metadata.annotations['dual-pods.llm-d.ai/launcher-based']) ||
+        (oldObject.metadata.labels['dual-pods.llm-d.ai/dual'] != object.metadata.labels['dual-pods.llm-d.ai/dual']) ||
+        (oldObject.metadata.labels['dual-pods.llm-d.ai/sleeping'] != object.metadata.labels['dual-pods.llm-d.ai/sleeping'])
+      ) && !request.userInfo.username.matches("system:serviceaccount:[^:]+:(launcher-populator|dual-pods-controller)$")
+    message: "annotation/label is managed by FMA controllers and cannot be modified directly"
