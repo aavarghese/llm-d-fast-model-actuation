@@ -1,0 +1,57 @@
+name: Publish Helm Charts
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - charts/**
+  workflow_dispatch:
+
+jobs:
+  publish_helm_charts:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v3.16.3'
+
+      - name: Update chart appVersion with git hash
+        run: |
+          GIT_HASH=$(git rev-parse --short HEAD)
+          echo "Updating charts with git hash: $GIT_HASH"
+
+          for dir in $(ls -d charts/*/); do
+            CHART_FILE="${dir}Chart.yaml"
+            if [ -f "$CHART_FILE" ]; then
+              # Update appVersion with git hash
+              sed -i "s/^appVersion:.*/appVersion: \"$GIT_HASH\"/" "$CHART_FILE"
+              echo "Updated $CHART_FILE:"
+              grep "appVersion:" "$CHART_FILE"
+            fi
+          done
+
+      - name: Login to Github Container Registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io \
+            --username ${{ github.actor }} \
+            --password-stdin
+
+      - name: Package and push helm charts
+        run: |
+          for DIR in $(ls -d charts/*/); do
+            CHART_NAME=$(helm show chart "$DIR" | grep '^name:' | awk '{print $2}')
+            CHART_VERSION=$(helm show chart "$DIR" | grep '^version:' | awk '{print $2}')
+            helm package "$DIR" --destination .
+            helm push "$CHART_NAME-$CHART_VERSION.tgz" oci://ghcr.io/${{ github.repository }}/charts
+          done
