@@ -25,11 +25,12 @@ helm install launcher-populator oci://ghcr.io/llm-d-incubation/llm-d-fast-model-
 
 See `charts/launcher-populator/values.yaml` for complete list of configurable parameters.
 
-## Important Considerations
+## Versioning and Git Hash Traceability
 
-The chart version in `charts/dpctlr/Chart.yaml` must be incremented before publishing. The workflow will skip publishing if a chart with the same version already exists.
+### Automatic Version Management
 
-### Container Image References
+The publishing workflow automatically creates unique chart versions by appending the git commit hash to the base version. This ensures every commit gets a unique, traceable version.
+
 
 The Helm chart references container images. Before publishing a chart:
 1. Ensure the referenced container images exist and are published
@@ -37,13 +38,52 @@ The Helm chart references container images. Before publishing a chart:
 3. Avoid using `:latest` tag in published charts for reproducibility
 
  The publishing workflow automatically updates the `appVersion` field with the git commit hash for traceability.
-
 #### How It Works
 
 When the workflow runs, it automatically:
 1. Gets the current git commit hash (short form, e.g., `d1a7c8f`)
-2. Updates `appVersion` in all Chart.yaml files with this hash
-3. Publishes the chart with the updated appVersion
+2. Reads the base version from Chart.yaml (e.g., `0.1.0`)
+3. Appends the git hash to create a unique version (e.g., `0.1.0-d1a7c8f`)
+4. Updates both `version` and `appVersion` in Chart.yaml
+5. Publishes the chart with the unique version
+
+**Example transformation**:
+
+Before workflow (in repository):
+```yaml
+apiVersion: v2
+name: dual-pods-controller
+version: 0.1.0              # Base version
+appVersion: "0.1.0"
+```
+
+After workflow (published chart):
+```yaml
+apiVersion: v2
+name: dual-pods-controller
+version: 0.1.0-d1a7c8f      # Unique version with git hash
+appVersion: "d1a7c8f"        # Git commit hash
+```
+
+**Benefits**:
+- ✅ Every commit gets a unique version - prevents overwrites
+- ✅ Automatic versioning - no manual bumps needed per commit
+- ✅ Full traceability - version contains git hash
+- ✅ Semantic versioning compliant - uses pre-release identifier
+
+### When to Update Base Version
+
+Update the base version in Chart.yaml when making significant changes:
+- **MAJOR** (0.1.0 → 1.0.0): Incompatible API changes
+- **MINOR** (0.1.0 → 0.2.0): Backwards-compatible functionality additions
+- **PATCH** (0.1.0 → 0.1.1): Backwards-compatible bug fixes
+
+### Container Image References
+
+The Helm chart references container images. Before publishing:
+1. Ensure the referenced container images exist and are published
+2. Update the `Image` value in `values.yaml` to reference a specific tag
+3. Avoid using `:latest` tag in published charts for reproducibility
 
 ## Publishing Process
 
@@ -52,10 +92,10 @@ When the workflow runs, it automatically:
 The chart is published automatically via the `.github/workflows/helm-release.yaml` workflow when:
 - Changes are pushed to `main` branch in the `charts/**` directory
 - This typically happens when a PR is merged
-- You **must** increment the `version` in `Chart.yaml` before merging to `main`
+- The workflow automatically creates a unique version by appending the git hash
+- Each commit gets a unique chart version (e.g., `0.1.0-d1a7c8f`)
 - The chart should reference published container images with specific tags
 - Avoid publishing charts that reference `:latest` or non-existent images
-- If a chart with the same version already exists in GHCR, the push will fail
 
 ### Manual Publishing (For Dev Testing or Special Cases)
 

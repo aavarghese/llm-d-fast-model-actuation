@@ -26,7 +26,7 @@ jobs:
         with:
           version: 'v3.16.3'
 
-      - name: Update chart appVersion with git hash
+      - name: Update chart version and appVersion with git hash
         run: |
           GIT_HASH=$(git rev-parse --short HEAD)
           echo "Updating charts with git hash: $GIT_HASH"
@@ -34,10 +34,19 @@ jobs:
           for dir in $(ls -d charts/*/); do
             CHART_FILE="${dir}Chart.yaml"
             if [ -f "$CHART_FILE" ]; then
+              # Get current version
+              CURRENT_VERSION=$(grep '^version:' "$CHART_FILE" | awk '{print $2}')
+              # Append git hash to version as pre-release identifier
+              NEW_VERSION="${CURRENT_VERSION}-${GIT_HASH}"
+
+              # Update version with git hash appended
+              sed -i "s/^version:.*/version: ${NEW_VERSION}/" "$CHART_FILE"
               # Update appVersion with git hash
               sed -i "s/^appVersion:.*/appVersion: \"$GIT_HASH\"/" "$CHART_FILE"
+
               echo "Updated $CHART_FILE:"
-              grep "appVersion:" "$CHART_FILE"
+              echo "  version: $CURRENT_VERSION -> $NEW_VERSION"
+              echo "  appVersion: $GIT_HASH"
             fi
           done
 
