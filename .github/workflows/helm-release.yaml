@@ -28,6 +28,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag && format('refs/tags/{0}', github.event.inputs.tag) || github.ref }}
+          token: ${{ github.token }}
+          persist-credentials: true
           fetch-depth: 0
 
       - name: Determine version
@@ -112,12 +114,12 @@ jobs:
 
       - name: Commit updated chart files
         if: steps.version.outputs.strategy == 'release'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
-          # Configure Git user
           git config user.name "${{ github.actor }}"
           git config user.email "${{ github.actor }}@users.noreply.github.com"
 
-          # Configure remote to use github.token
           git remote set-url origin https://${{ github.token }}@github.com/${{ github.repository }}.git
 
           # Checkout the default branch
@@ -126,13 +128,11 @@ jobs:
           git checkout $DEFAULT_BRANCH
           git pull origin $DEFAULT_BRANCH
 
-          # Stage changes
           git add charts/*/Chart.yaml
 
-          # Commit with release info
           TAG="${{ steps.version.outputs.tag }}"
           COMMIT_MSG="Release $TAG: update Chart.yaml"
           git commit -m "$COMMIT_MSG" || echo "No changes to commit"
 
-          # Push to main
+          # Push directly to main
           git push origin $DEFAULT_BRANCH || echo "Push failed - ensure proper permissions"
