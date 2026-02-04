@@ -122,18 +122,17 @@ jobs:
 
           git remote set-url origin https://${{ github.token }}@github.com/${{ github.repository }}.git
 
-          git add charts/*/Chart.yaml
-
-          TAG="${{ steps.version.outputs.tag }}"
-          COMMIT_MSG="Release $TAG: update Chart.yaml"
-          git commit -m "$COMMIT_MSG"
-
           git fetch origin
           DEFAULT_BRANCH=$(git remote show origin | grep "HEAD branch" | cut -d' ' -f5 || echo "main")
           git checkout $DEFAULT_BRANCH
           git pull origin $DEFAULT_BRANCH
 
-          # Merge the commit we just made (from detached HEAD)
-          git merge --ff-only HEAD@{1}
+          git add charts/*/Chart.yaml
 
-          git push origin $DEFAULT_BRANCH || echo "Push failed - ensure proper permissions"
+          TAG="${{ steps.version.outputs.tag }}"
+          if ! git diff --cached --quiet; then
+            git commit -m "Release $TAG: update Chart.yaml"
+            git push origin $DEFAULT_BRANCH
+          else
+            echo "No changes to commit"
+          fi
