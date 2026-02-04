@@ -122,11 +122,14 @@ jobs:
 
           git remote set-url origin https://${{ github.token }}@github.com/${{ github.repository }}.git
 
+          git stash
+
           git fetch origin
           DEFAULT_BRANCH=$(git remote show origin | grep "HEAD branch" | cut -d' ' -f5 || echo "main")
           git checkout $DEFAULT_BRANCH
           git pull origin $DEFAULT_BRANCH
 
+          git stash pop
           git add charts/*/Chart.yaml
 
           TAG="${{ steps.version.outputs.tag }}"
