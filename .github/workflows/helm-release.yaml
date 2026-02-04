@@ -122,7 +122,6 @@ jobs:
 
           git remote set-url origin https://${{ github.token }}@github.com/${{ github.repository }}.git
 
-          # Checkout the default branch
           git fetch origin
           DEFAULT_BRANCH=$(git remote show origin | grep "HEAD branch" | cut -d' ' -f5 || echo "main")
           git checkout $DEFAULT_BRANCH
@@ -134,5 +133,4 @@ jobs:
           COMMIT_MSG="Release $TAG: update Chart.yaml"
           git commit -m "$COMMIT_MSG" || echo "No changes to commit"
 
-          # Push directly to main
           git push origin $DEFAULT_BRANCH || echo "Push failed - ensure proper permissions"
