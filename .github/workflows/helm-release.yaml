@@ -124,8 +124,9 @@ jobs:
 
           git fetch origin
           DEFAULT_BRANCH=$(git remote show origin | grep "HEAD branch" | cut -d' ' -f5 || echo "main")
-          git checkout $DEFAULT_BRANCH
-          git pull origin $DEFAULT_BRANCH
+
+          git branch -D $DEFAULT_BRANCH 2>/dev/null || true
+          git checkout -b $DEFAULT_BRANCH origin/$DEFAULT_BRANCH
 
           git add charts/*/Chart.yaml
 
