@@ -80,7 +80,7 @@ jobs:
                 sed -i "s/^appVersion:.*/appVersion: \"${TAG}\"/" "$CHART_FILE"
 
                 echo "Updated $CHART_FILE (RELEASE):"
-                cat $CHART_DIR/Chart.yaml
+                cat "$CHART_FILE"
               else
                 # Continuous: Use git hash
                 GIT_HASH="${{ steps.version.outputs.git_hash }}"
@@ -90,7 +90,7 @@ jobs:
                 sed -i "s/^appVersion:.*/appVersion: \"$GIT_HASH\"/" "$CHART_FILE"
 
                 echo "Updated $CHART_FILE (CONTINUOUS):"
-                cat $CHART_DIR/Chart.yaml
+                cat "$CHART_FILE"
               fi
             fi
           done
