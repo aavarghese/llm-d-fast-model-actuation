@@ -5,7 +5,7 @@ cleanup() {
   echo "Cleaning up test resources"
   kubectl delete pod "${POD_NAME}" --ignore-not-found || true
   kubectl delete pod "${LAUNCHER_POD_NAME}" --ignore-not-found || true
-  kubectl delete pod "${REQUESTER_POD_NAME}" --ignore-not-found || true
+  kubectl delete replicaset "${REQUESTER_POD_NAME}" --ignore-not-found || true
   kubectl delete pod "${UNBOUND_REQUESTER_POD_NAME}" --ignore-not-found || true
   kubectl delete inferenceserverconfig "${INFERENCE_SERVER_CONFIG_NAME}" --ignore-not-found || true
   kubectl delete launcherconfig "${LAUNCHER_CONFIG_NAME}" --ignore-not-found || true
@@ -27,8 +27,9 @@ if ! kubectl get validatingadmissionpolicy fma-immutable-fields fma-bound-server
   exit 1
 fi
 
-requester_img=$(make echo-var VAR=TEST_REQUESTER_IMG)
 server_img=$(make echo-var VAR=TEST_SERVER_IMG)
+requester_img=$(make echo-var VAR=TEST_REQUESTER_IMG)
+launcher_img=$(make echo-var VAR=TEST_LAUNCHER_IMG)
 
 cat <<EOF | kubectl apply -f -
 apiVersion: fma.llm-d.ai/v1alpha1
@@ -36,13 +37,22 @@ kind: LauncherConfig
 metadata:
   name: ${LAUNCHER_CONFIG_NAME}
 spec:
-  maxSleepingInstances: 2
+  maxSleepingInstances: 3
   podTemplate:
     spec:
       containers:
-      - name: launcher
-        image: ${server_img}
-        imagePullPolicy: Never
+        - name: inference-server
+          image: $launcher_img
+          imagePullPolicy: Never
+          command:
+          - /bin/bash
+          - "-c"
+          args:
+          - |
+            uvicorn launcher:app \
+            --host 0.0.0.0 \
+            --log-level info \
+            --port 8001
 ---
 apiVersion: fma.llm-d.ai/v1alpha1
 kind: InferenceServerConfig
@@ -51,50 +61,87 @@ metadata:
 spec:
   launcherConfigName: ${LAUNCHER_CONFIG_NAME}
   modelServerConfig:
-    port: 8000
-    options: "--model test-model"
+    port: 8005
+    options: "--model TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+    env_vars:
+      VLLM_SERVER_DEV_MODE: "1"
+      VLLM_USE_V1: "1"
+      VLLM_LOGGING_LEVEL: "DEBUG"
+    labels:
+      component: inference
+    annotations:
+      description: "Example InferenceServerConfig"
 EOF
 
 cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: Pod
+apiVersion: apps/v1
+kind: ReplicaSet
 metadata:
   name: ${REQUESTER_POD_NAME}
   labels:
     app: validation-example
-  annotations:
-    dual-pods.llm-d.ai/inference-server-config: "${INFERENCE_SERVER_CONFIG_NAME}"
 spec:
-  containers:
-  - name: inference-server
-    image: ${requester_img}
-    imagePullPolicy: Never
-    command:
-    - /ko-app/test-requester
-    - --node=\$(NODE_NAME)
-    - --pod-uid=\$(POD_UID)
-    - --namespace=\$(NAMESPACE)
-    - --num-gpus=0
-    env:
-    - name: NODE_NAME
-      valueFrom:
-        fieldRef:
-          fieldPath: spec.nodeName
-    - name: POD_UID
-      valueFrom:
-        fieldRef:
-          fieldPath: metadata.uid
-    - name: NAMESPACE
-      valueFrom:
-        fieldRef:
-          fieldPath: metadata.namespace
+  replicas: 1
+  selector:
+    matchLabels:
+      app: validation-example
+  template:
+    metadata:
+      labels:
+        app: validation-example
+      annotations:
+        dual-pods.llm-d.ai/admin-port: "8081"
+        dual-pods.llm-d.ai/inference-server-config: "${INFERENCE_SERVER_CONFIG_NAME}"
+    spec:
+      containers:
+        - name: inference-server
+          image: $requester_img
+          imagePullPolicy: IfNotPresent
+          command:
+          - /ko-app/test-requester
+          - --node=\$(NODE_NAME)
+          - --pod-uid=\$(POD_UID)
+          - --namespace=\$(NAMESPACE)
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef: { fieldPath: spec.nodeName }
+            - name: POD_UID
+              valueFrom:
+                fieldRef: { fieldPath: metadata.uid }
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef: { fieldPath: metadata.namespace }
+          ports:
+          - name: probes
+            containerPort: 8080
+          - name: spi
+            containerPort: 8081
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            limits:
+              nvidia.com/gpu: "1"
+              cpu: "200m"
+              memory: 250Mi
+      serviceAccount: testreq
 EOF
 
-echo "Created server-requesting pod ${REQUESTER_POD_NAME}"
+echo "Created server-requesting ReplicaSet ${REQUESTER_POD_NAME}"
 
-REQUESTER_UID=$(kubectl get pod "${REQUESTER_POD_NAME}" -o jsonpath='{.metadata.uid}')
+REQUESTER_POD=$(kubectl get pods -l app=validation-example -o jsonpath='{.items[0].metadata.name}')
+if [ -z "${REQUESTER_POD}" ]; then
+  echo "ERROR: Failed to find pod created by ReplicaSet ${REQUESTER_POD_NAME}"
+  exit 3
+fi
+
+REQUESTER_UID=$(kubectl get pod "${REQUESTER_POD}" -o jsonpath='{.metadata.uid}')
 if [ -z "${REQUESTER_UID}" ]; then
-  echo "ERROR: Failed to get UID for requester pod ${REQUESTER_POD_NAME}"
+  echo "ERROR: Failed to get UID for requester pod ${REQUESTER_POD}"
   exit 3
 fi
 
@@ -104,30 +151,34 @@ kind: Pod
 metadata:
   name: ${LAUNCHER_POD_NAME}
   labels:
-    app: validation-example
     app.kubernetes.io/component: launcher
     dual-pods.llm-d.ai/generated-by: launcher-populator
     dual-pods.llm-d.ai/launcher-config-name: "${LAUNCHER_CONFIG_NAME}"
-    dual-pods.llm-d.ai/node-name: test-node
-    dual-pods.llm-d.ai/dual: "${REQUESTER_POD_NAME}"
+    dual-pods.llm-d.ai/dual: "${REQUESTER_POD}"
   annotations:
-    dual-pods.llm-d.ai/requester: "${REQUESTER_UID} ${REQUESTER_POD_NAME}"
+    dual-pods.llm-d.ai/requester: "${REQUESTER_UID} ${REQUESTER_POD}"
 spec:
   containers:
   - name: inference-server
-    image: ${server_img}
-    imagePullPolicy: Never
+    image: $launcher_img
+    imagePullPolicy: IfNotPresent
     command:
-    - /ko-app/test-server
-    - --startup-delay=22
+    - /bin/bash
+    - "-c"
+    args:
+    - |
+      uvicorn launcher:app \
+        --host 0.0.0.0 \
+        --log-level info \
+        --port 8001
 EOF
 
 echo "Created launcher pod ${LAUNCHER_POD_NAME}"
 
 for i in {1..15}; do
-  REQUESTER_DUAL=$(kubectl get pod "${REQUESTER_POD_NAME}" -o jsonpath='{.metadata.labels.dual-pods\.llm-d\.ai/dual}' 2>/dev/null || echo "")
+  REQUESTER_DUAL=$(kubectl get pod "${REQUESTER_POD}" -o jsonpath='{.metadata.labels.dual-pods\.llm-d\.ai/dual}' 2>/dev/null || echo "")
   if [ "${REQUESTER_DUAL}" = "${LAUNCHER_POD_NAME}" ]; then
-    echo "Binding established: ${REQUESTER_POD_NAME} pod has dual label pointing to ${LAUNCHER_POD_NAME}"
+    echo "Binding established: ${REQUESTER_POD} pod has dual label pointing to ${LAUNCHER_POD_NAME}"
     break
   fi
   sleep 1
@@ -161,7 +212,7 @@ else
 fi
 
 echo "Attempting to change immutable annotation 'dual-pods.llm-d.ai/inference-server-config' on bound pod as regular user — expect rejection"
-if output=$(kubectl annotate pod "${REQUESTER_POD_NAME}" "dual-pods.llm-d.ai/inference-server-config=patched-config" --overwrite 2>&1); then
+if output=$(kubectl annotate pod "${REQUESTER_POD}" "dual-pods.llm-d.ai/inference-server-config=patched-config" --overwrite 2>&1); then
   echo "ERROR: bound pod annotation change succeeded as regular user but should have been rejected"
   echo "kubectl output: ${output}"
   exit 8
@@ -170,7 +221,7 @@ else
 fi
 
 echo "Attempting to delete 'dual-pods.llm-d.ai/inference-server-config' annotation"
-if output=$(kubectl annotate pod "${REQUESTER_POD_NAME}" "dual-pods.llm-d.ai/inference-server-config-" 2>&1); then
+if output=$(kubectl annotate pod "${REQUESTER_POD}" "dual-pods.llm-d.ai/inference-server-config-" 2>&1); then
   echo "ERROR: annotation deletion succeeded but should have been rejected"
   echo "kubectl output: ${output}"
   exit 9
@@ -178,8 +229,8 @@ else
   echo "SUCCESS: annotation deletion was rejected, as expected. kubectl output: ${output}"
 fi
 
-echo "Attempting to change non-protected label on bound pod ${REQUESTER_POD_NAME} — expect no rejection"
-if output=$(kubectl label pod "${REQUESTER_POD_NAME}" "regular-label=yes" --overwrite 2>&1); then
+echo "Attempting to change non-protected label on bound pod ${REQUESTER_POD} — expect no rejection"
+if output=$(kubectl label pod "${REQUESTER_POD}" "regular-label=yes" --overwrite 2>&1); then
   echo "SUCCESS: non-protected label update on bound pod allowed, as expected. kubectl output: ${output}"
 else
   echo "ERROR: non-protected label update on bound pod was rejected but should have been allowed"
@@ -197,10 +248,23 @@ metadata:
 spec:
   containers:
   - name: inference-server
-    image: ${requester_img}
-    imagePullPolicy: Never
+    image: $requester_img
+    imagePullPolicy: IfNotPresent
     command:
     - /ko-app/test-requester
+    - --node=\$(NODE_NAME)
+    - --pod-uid=\$(POD_UID)
+    - --namespace=\$(NAMESPACE)
+    env:
+      - name: NODE_NAME
+        valueFrom:
+          fieldRef: { fieldPath: spec.nodeName }
+      - name: POD_UID
+        valueFrom:
+          fieldRef: { fieldPath: metadata.uid }
+      - name: NAMESPACE
+        valueFrom:
+          fieldRef: { fieldPath: metadata.namespace }
 EOF
 
 echo "Created unbound server requesting pod ${UNBOUND_REQUESTER_POD_NAME}"
@@ -231,8 +295,8 @@ metadata:
 spec:
   containers:
   - name: main
-    image: ${requester_img}
-    imagePullPolicy: Never
+    image: alpine:latest
+    imagePullPolicy: IfNotPresent
     command: ["/bin/sh","-c","sleep 3600"]
 EOF
 
