@@ -577,7 +577,7 @@ spec:
           image: ${CONTAINER_IMG_REG}/requester:latest
           imagePullPolicy: Always
           command:
-          - /ko-app/requester
+          - /app/requester
           - --node=\$(NODE_NAME)
           - --pod-uid=\$(POD_UID)
           - --namespace=\$(NAMESPACE)
@@ -613,6 +613,7 @@ EOF
 Get the UID of the server-requesting Pod:
 
 ```shell
+kubectl wait --for=condition=Ready pod -l app=validation-example --timeout=120s
 REQUESTER_POD_NAME=$(kubectl get pods -l app=validation-example -o jsonpath='{.items[0].metadata.name}')
 REQUESTER_UID=$(kubectl get pod "${REQUESTER_POD_NAME}" -o jsonpath='{.metadata.uid}')
 ```

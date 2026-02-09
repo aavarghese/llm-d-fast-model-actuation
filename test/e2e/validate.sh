@@ -27,7 +27,6 @@ if ! kubectl get validatingadmissionpolicy fma-immutable-fields fma-bound-server
   exit 1
 fi
 
-server_img=$(make echo-var VAR=TEST_SERVER_IMG)
 requester_img=$(make echo-var VAR=TEST_REQUESTER_IMG)
 launcher_img=$(make echo-var VAR=TEST_LAUNCHER_IMG)
 
@@ -133,6 +132,7 @@ EOF
 
 echo "Created server-requesting ReplicaSet ${REQUESTER_POD_NAME}"
 
+kubectl wait --for=condition=Ready pod -l app=validation-example --timeout=120s
 REQUESTER_POD=$(kubectl get pods -l app=validation-example -o jsonpath='{.items[0].metadata.name}')
 if [ -z "${REQUESTER_POD}" ]; then
   echo "ERROR: Failed to find pod created by ReplicaSet ${REQUESTER_POD_NAME}"
