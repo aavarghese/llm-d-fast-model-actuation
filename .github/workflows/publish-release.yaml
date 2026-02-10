@@ -1,4 +1,4 @@
-name: Release – Build Images & Publish Helm Charts to GHCR
+name: publish release # Publish a release's container images and Helm chart
 
 on:
   release:
@@ -9,9 +9,6 @@ on:
         description: 'Release tag (e.g., v0.3.1) - for testing without creating a release'
         required: true
         type: string
-  push:
-    tags:
-      - 'v*'
 
 permissions:
   contents: read
@@ -26,26 +23,20 @@ jobs:
       # 1. Checkout repo
       # -----------------------------------------
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag && format('refs/tags/{0}', github.event.inputs.tag) || github.ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', github.event.inputs.tag) || github.ref }}
           token: ${{ github.token }}
           persist-credentials: true
 
       # -----------------------------------------
-      # 2. Determine version from tag (v0.3.1 → 0.3.1)
+      # 2. Determine version from tag
       # -----------------------------------------
       - name: Determine version from tag
         id: version
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             RAW_TAG="${{ github.event.inputs.tag }}"
-            if [[ -z "$RAW_TAG" ]]; then
-              echo "Error: tag input required for workflow_dispatch" >&2
-              exit 1
-            fi
-          elif [[ "${{ github.event_name }}" == "push" ]]; then
-            RAW_TAG="${GITHUB_REF#refs/tags/}"
           else
             RAW_TAG="${GITHUB_REF#refs/tags/}"
           fi
@@ -57,49 +48,53 @@ jobs:
       # 3. Set up build tools
       # -----------------------------------------
       - name: Install ko
-        uses: ko-build/setup-ko@v0.7
+        uses: ko-build/setup-ko@3aebd0597dc1e9d1a26bcfdb7cbeb19c131d3037 # v0.7
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.7.1
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@49b3bc8e6bdd4a60e6116a5414239cba5943d3cf # v3.2.0
 
       # -----------------------------------------
       # 4. Log in to GHCR
       # -----------------------------------------
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # -----------------------------------------
-      # 5. Build and push controller image
+      # 5. Build and push dual-pods controller image
       # -----------------------------------------
-      - name: Build and push controller image
+      - name: Build and push dual-pods controller image
         run: |
           TAG="${{ steps.version.outputs.tag }}"
+          reg="${{ github.repository }}"
 
+          KO_DOCKER_REPO=ghcr.io/${reg@L} \
           make build-controller \
-            CONTAINER_IMG_REG=ghcr.io/${{ github.repository }} \
+            CONTAINER_IMG_REG=ghcr.io/${reg@L} \
             CONTROLLER_IMG_TAG=$TAG
 
-          echo "Controller image published: ghcr.io/${{ github.repository }}/dual-pods-controller:$TAG"
+          echo "Dual-pods controller image published: ghcr.io/${reg@L}/dual-pods-controller:$TAG"
 
       # -----------------------------------------
-      # 6. Build and push populator image
+      # 6. Build and push launcher population controller image
       # -----------------------------------------
-      - name: Build and push populator image
+      - name: Build and push launcher population controller image
         run: |
           TAG="${{ steps.version.outputs.tag }}"
+          reg="${{ github.repository }}"
 
+          KO_DOCKER_REPO=ghcr.io/${reg@L} \
           make build-populator \
-            CONTAINER_IMG_REG=ghcr.io/${{ github.repository }} \
+            CONTAINER_IMG_REG=ghcr.io/${reg@L} \
             POPULATOR_IMG_TAG=$TAG
 
-          echo "Populator image published: ghcr.io/${{ github.repository }}/launcher-populator:$TAG"
+          echo "Launcher population controller image published: ghcr.io/${reg@L}/launcher-populator:$TAG"
 
       # -----------------------------------------
       # 7. Build and push launcher image
@@ -107,12 +102,13 @@ jobs:
       - name: Build and push launcher image
         run: |
           TAG="${{ steps.version.outputs.tag }}"
+          reg="${{ github.repository }}"
 
           make build-and-push-launcher \
-            CONTAINER_IMG_REG=ghcr.io/${{ github.repository }} \
+            CONTAINER_IMG_REG=ghcr.io/${reg@L} \
             LAUNCHER_IMG_TAG=$TAG
 
-          echo "Launcher image published: ghcr.io/${{ github.repository }}/launcher:$TAG"
+          echo "Launcher image published: ghcr.io/${reg@L}/launcher:$TAG"
 
       # -----------------------------------------
       # 8. Build and push requester image
@@ -120,51 +116,36 @@ jobs:
       - name: Build and push requester image
         run: |
           TAG="${{ steps.version.outputs.tag }}"
+          reg="${{ github.repository }}"
 
           make build-and-push-requester \
-            CONTAINER_IMG_REG=ghcr.io/${{ github.repository }} \
+            CONTAINER_IMG_REG=ghcr.io/${reg@L} \
             REQUESTER_IMG_TAG=$TAG
 
-          echo "Requester image published: ghcr.io/${{ github.repository }}/requester:$TAG"
+          echo "Requester image published: ghcr.io/${reg@L}/requester:$TAG"
 
       # -----------------------------------------
-      # 9. Install Helm
+      # 9. Update Helm chart values with release images
       # -----------------------------------------
-      - name: Install Helm
-        uses: azure/setup-helm@v4
-        with:
-          version: 'v3.16.3'
-
-      # -----------------------------------------
-      # 9. Update Helm charts with release version
-      # -----------------------------------------
-      - name: Update Helm chart files with version
+      - name: Update Helm chart values with release images
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
           TAG="${{ steps.version.outputs.tag }}"
+          reg="${{ github.repository }}"
 
-          # Update dpctlr chart
-          DPCTLR_CHART="charts/dpctlr"
-          sed -i "s/^version:.*/version: ${VERSION}/" $DPCTLR_CHART/Chart.yaml
-          sed -i "s/^appVersion:.*/appVersion: \"${TAG}\"/" $DPCTLR_CHART/Chart.yaml
-          sed -i "s|Image:.*|Image: ghcr.io/${{ github.repository }}/dual-pods-controller:${TAG}|" $DPCTLR_CHART/values.yaml
+          # Update dual-pods-controller chart values
+          DPCTLR_CHART="charts/dual-pods-controller"
+          yq eval -i ".Image = \"ghcr.io/${reg@L}/dual-pods-controller:${TAG}\"" $DPCTLR_CHART/values.yaml
 
-          echo "Updated $DPCTLR_CHART/Chart.yaml:"
-          grep -E '^(version|appVersion):' $DPCTLR_CHART/Chart.yaml
           echo "Updated $DPCTLR_CHART/values.yaml:"
-          grep '^Image:' $DPCTLR_CHART/values.yaml
+          yq eval '.Image' $DPCTLR_CHART/values.yaml
 
-          # Update launcher-populator chart
+          # Update launcher-populator chart values
           POPULATOR_CHART="charts/launcher-populator"
-          sed -i "s/^version:.*/version: ${VERSION}/" $POPULATOR_CHART/Chart.yaml
-          sed -i "s/^appVersion:.*/appVersion: \"${TAG}\"/" $POPULATOR_CHART/Chart.yaml
-          sed -i "s|repository:.*|repository: ghcr.io/${{ github.repository }}/launcher-populator|" $POPULATOR_CHART/values.yaml
-          sed -i "s/tag:.*/tag: ${TAG}/" $POPULATOR_CHART/values.yaml
+          yq eval -i ".image.repository = \"ghcr.io/${reg@L}/launcher-populator\"" $POPULATOR_CHART/values.yaml
+          yq eval -i ".image.tag = \"${TAG}\"" $POPULATOR_CHART/values.yaml
 
-          echo "Updated $POPULATOR_CHART/Chart.yaml:"
-          grep -E '^(version|appVersion):' $POPULATOR_CHART/Chart.yaml
           echo "Updated $POPULATOR_CHART/values.yaml:"
-          grep -E '(repository|tag):' $POPULATOR_CHART/values.yaml
+          yq eval '.image' $POPULATOR_CHART/values.yaml
 
       # -----------------------------------------
       # 10. Login to GHCR for Helm
@@ -180,17 +161,23 @@ jobs:
       # -----------------------------------------
       - name: Package and push Helm charts
         run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ steps.version.outputs.tag }}"
+          reg="${{ github.repository }}"
+
           for DIR in charts/*/; do
-            CHART_NAME=$(helm show chart "$DIR" | grep '^name:' | awk '{print $2}')
-            CHART_VERSION=$(helm show chart "$DIR" | grep '^version:' | awk '{print $2}')
+            CHART_NAME=$(basename "$DIR")
 
-            echo "Packaging $CHART_NAME version $CHART_VERSION..."
-            helm package "$DIR" --destination .
+            echo "Packaging $CHART_NAME with version $VERSION and appVersion $TAG..."
+            helm package "$DIR" \
+              --version "$VERSION" \
+              --app-version "$TAG" \
+              --destination .
 
-            echo "Pushing $CHART_NAME-$CHART_VERSION.tgz to GHCR..."
-            helm push "$CHART_NAME-$CHART_VERSION.tgz" oci://ghcr.io/${{ github.repository }}/charts
+            echo "Pushing $CHART_NAME-$VERSION.tgz to GHCR..."
+            helm push "$CHART_NAME-$VERSION.tgz" oci://ghcr.io/${reg@L}/charts
 
-            echo "✓ Published $CHART_NAME:$CHART_VERSION"
+            echo "✓ Published $CHART_NAME:$VERSION (appVersion: $TAG)"
           done
 
       # -----------------------------------------
@@ -200,22 +187,23 @@ jobs:
         run: |
           TAG="${{ steps.version.outputs.tag }}"
           VERSION="${{ steps.version.outputs.version }}"
+          reg="${{ github.repository }}"
 
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "Release $TAG completed successfully!"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
           echo "Container Images:"
-          echo "  • ghcr.io/${{ github.repository }}/dual-pods-controller:$TAG"
-          echo "  • ghcr.io/${{ github.repository }}/launcher-populator:$TAG"
-          echo "  • ghcr.io/${{ github.repository }}/launcher:$TAG"
-          echo "  • ghcr.io/${{ github.repository }}/requester:$TAG"
+          echo "  • ghcr.io/${reg@L}/dual-pods-controller:$TAG"
+          echo "  • ghcr.io/${reg@L}/launcher-populator:$TAG"
+          echo "  • ghcr.io/${reg@L}/launcher:$TAG"
+          echo "  • ghcr.io/${reg@L}/requester:$TAG"
           echo ""
           echo "Helm Charts (version $VERSION):"
-          echo "  • oci://ghcr.io/${{ github.repository }}/charts/dual-pods-controller"
-          echo "  • oci://ghcr.io/${{ github.repository }}/charts/launcher-populator"
+          echo "  • oci://ghcr.io/${reg@L}/charts/dual-pods-controller"
+          echo "  • oci://ghcr.io/${reg@L}/charts/launcher-populator"
           echo ""
           echo "Install with:"
-          echo "  helm install dpctlr oci://ghcr.io/${{ github.repository }}/charts/dual-pods-controller --version $VERSION"
-          echo "  helm install launcher-populator oci://ghcr.io/${{ github.repository }}/charts/launcher-populator --version $VERSION"
+          echo "  helm install dpctlr oci://ghcr.io/${reg@L}/charts/dual-pods-controller --version $VERSION"
+          echo "  helm install launcher-populator oci://ghcr.io/${reg@L}/charts/launcher-populator --version $VERSION"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
