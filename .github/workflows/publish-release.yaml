@@ -114,6 +114,7 @@ jobs:
       # 8. Build and push launcher image
       # -----------------------------------------
       - name: Build and push launcher image
+        if: false  # Temporarily disabled
         run: |
           TAG="${{ steps.version.outputs.tag }}"
           reg="${{ github.repository }}"
