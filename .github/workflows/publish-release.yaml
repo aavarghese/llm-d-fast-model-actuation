@@ -97,21 +97,7 @@ jobs:
           echo "Launcher population controller image published: ghcr.io/${reg@L}/launcher-populator:$TAG"
 
       # -----------------------------------------
-      # 7. Build and push launcher image
-      # -----------------------------------------
-      - name: Build and push launcher image
-        run: |
-          TAG="${{ steps.version.outputs.tag }}"
-          reg="${{ github.repository }}"
-
-          make build-and-push-launcher \
-            CONTAINER_IMG_REG=ghcr.io/${reg@L} \
-            LAUNCHER_IMG_TAG=$TAG
-
-          echo "Launcher image published: ghcr.io/${reg@L}/launcher:$TAG"
-
-      # -----------------------------------------
-      # 8. Build and push requester image
+      # 7. Build and push requester image
       # -----------------------------------------
       - name: Build and push requester image
         run: |
@@ -123,6 +109,20 @@ jobs:
             REQUESTER_IMG_TAG=$TAG
 
           echo "Requester image published: ghcr.io/${reg@L}/requester:$TAG"
+
+      # -----------------------------------------
+      # 8. Build and push launcher image
+      # -----------------------------------------
+      - name: Build and push launcher image
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          reg="${{ github.repository }}"
+
+          make build-and-push-launcher \
+            CONTAINER_IMG_REG=ghcr.io/${reg@L} \
+            LAUNCHER_IMG_TAG=$TAG
+
+          echo "Launcher image published: ghcr.io/${reg@L}/launcher:$TAG"
 
       # -----------------------------------------
       # 9. Update Helm chart values with release images
