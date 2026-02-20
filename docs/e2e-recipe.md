@@ -602,7 +602,7 @@ EOF
 REQUESTER_POD_NAME=$(kubectl get pods -l app=validation-example -o jsonpath='{.items[0].metadata.name}')
 
 # Wait for launcher pod to be created
-kubectl wait --for=jsonpath='{.items[0].metadata.name}' pods -l dual-pods.llm-d.ai/launcher-config-name=my-launcher-config --timeout=60s
+kubectl wait --for=create pods -l dual-pods.llm-d.ai/launcher-config-name=my-launcher-config --timeout=60s
 
 # Get the launcher pod name
 LAUNCHER_POD_NAME=$(kubectl get pods -l dual-pods.llm-d.ai/launcher-config-name=my-launcher-config -o jsonpath='{.items[0].metadata.name}')
