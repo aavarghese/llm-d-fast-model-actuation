@@ -265,7 +265,9 @@ func (item infSvrItem) process(urCtx context.Context, ctl *controller, nodeDat *
 	}
 
 	// Fetch the assigned GPUs if that has not already been done.
-	if serverDat.GPUIndicesStr == nil {
+	// We only need GPU UUIDs here - the launcher handles UUID→index translation internally.
+	// For non-launcher-based pods, we defer index mapping to when we actually need it.
+	if serverDat.GPUIDsStr == nil {
 		logger.V(5).Info("Querying accelerators", "ip", requesterIP, "port", adminPort)
 		url := fmt.Sprintf("http://%s:%s%s", requesterIP, adminPort, stubapi.AcceleratorQueryPath)
 		gpuUUIDs, err := getGPUUUIDs(url)
@@ -281,16 +283,12 @@ func (item infSvrItem) process(urCtx context.Context, ctl *controller, nodeDat *
 			return ctl.ensureReqStatus(ctx, requestingPod, serverDat, "the assigned set of GPUs is empty")
 		}
 		logger.V(5).Info("Found GPUs", "gpuUUIDs", gpuUUIDs)
-		gpuIndices, err := ctl.mapToGPUIndices(requestingPod.Spec.NodeName, gpuUUIDs)
-		if err != nil {
-			return ctl.ensureReqStatus(ctx, requestingPod, serverDat, err.Error())
-		}
 		gpuIDsStr := strings.Join(gpuUUIDs, ",")
-		gpuIndicesStr := strings.Join(gpuIndices, ",")
 		serverDat.GPUIDs = gpuUUIDs
 		serverDat.GPUIDsStr = &gpuIDsStr
-		serverDat.GPUIndices = gpuIndices
-		serverDat.GPUIndicesStr = &gpuIndicesStr
+		// Note: GPUIndices and GPUIndicesStr are only populated later for non-launcher-based pods
+		// that need CUDA_VISIBLE_DEVICES set. Launcher-based pods receive UUIDs and handle
+		// the translation internally via pynvml.
 	}
 
 	var launcherBased bool
@@ -386,6 +384,18 @@ func (item infSvrItem) process(urCtx context.Context, ctl *controller, nodeDat *
 	// What remains to be done is to wake or create a server-providing Pod
 
 	if !launcherBased {
+		// Non-launcher-based pods need GPU indices for CUDA_VISIBLE_DEVICES.
+		// We defer the UUID→index mapping until here to avoid requiring gpu-map for launcher-based pods.
+		if serverDat.GPUIndicesStr == nil {
+			gpuIndices, err := ctl.mapToGPUIndices(requestingPod.Spec.NodeName, serverDat.GPUIDs)
+			if err != nil {
+				return ctl.ensureReqStatus(ctx, requestingPod, serverDat, err.Error())
+			}
+			gpuIndicesStr := strings.Join(gpuIndices, ",")
+			serverDat.GPUIndices = gpuIndices
+			serverDat.GPUIndicesStr = &gpuIndicesStr
+		}
+
 		serverPatch := requestingPod.Annotations[api.ServerPatchAnnotationName]
 		if serverPatch == "" { // this is bad, somebody has hacked important data
 			return ctl.ensureReqStatus(ctx, requestingPod, serverDat, "the "+api.ServerPatchAnnotationName+" annotation is missing")
@@ -548,7 +558,7 @@ func (item infSvrItem) process(urCtx context.Context, ctl *controller, nodeDat *
 		return err, true
 	}
 	serverDat.Sleeping = ptr.To(false)
-	logger.V(2).Info("Created launcher-based server-providing pod", "name", echo.Name, "gpus", serverDat.GPUIndicesStr, "annotations", echo.Annotations, "labels", echo.Labels, "resourceVersion", echo.ResourceVersion)
+	logger.V(2).Info("Created launcher-based server-providing pod", "name", echo.Name, "gpuUUIDs", serverDat.GPUIDsStr, "annotations", echo.Annotations, "labels", echo.Labels, "resourceVersion", echo.ResourceVersion)
 
 	return ctl.ensureReqStatus(ctx, requestingPod, serverDat)
 }
@@ -731,11 +741,11 @@ func (ctl *controller) enforceSleeperBudget(ctx context.Context, serverDat *serv
 			return strings.Compare(left.Name, right.Name)
 		}
 	}
-	for _, gpuIndex := range serverDat.GPUIndices { // enforce sleeper budget on this GPU
+	for _, gpuUUID := range serverDat.GPUIDs { // enforce sleeper budget on this GPU
 		// This is really simple logic. Just pick some without preference.
 		// Recognize deletions done for the sake of other GPUs.
 		// TODO: better
-		key := requestingPod.Spec.NodeName + " " + gpuIndex
+		key := requestingPod.Spec.NodeName + " " + gpuUUID
 		sleepingAnys, err := ctl.podInformer.GetIndexer().ByIndex(GPUIndexName, key)
 		if err != nil { // impossible
 			return err, false
@@ -787,7 +797,7 @@ func (ctl *controller) bind(ctx context.Context, serverDat *serverData, requesti
 		return fmt.Errorf("failed to bind server-providing Pod %s: %w", providingPod.Name, err), true
 	}
 	serverDat.ProvidingPodName = providingPod.Name
-	logger.V(2).Info("Bound server-providing Pod", "name", providingPod.Name, "node", requestingPod.Spec.NodeName, "gpus", serverDat.GPUIndicesStr, "newResourceVersion", echo.ResourceVersion)
+	logger.V(2).Info("Bound server-providing Pod", "name", providingPod.Name, "node", requestingPod.Spec.NodeName, "gpuUUIDs", serverDat.GPUIDsStr, "newResourceVersion", echo.ResourceVersion)
 	var serverPort int16
 	if launcherBased {
 		serverPort = instPort
@@ -963,7 +973,7 @@ func (ctl *controller) ensureUnbound(ctx context.Context, serverDat *serverData,
 		if err != nil {
 			return fmt.Errorf("failed to unbind server-providing Pod %s: %w", providingPod.Name, err)
 		}
-		logger.V(2).Info("Unbound server-providing Pod", "name", providingPod.Name, "node", providingPod.Spec.NodeName, "gpus", serverDat.GPUIndicesStr, "newResourceVersion", echo.ResourceVersion)
+		logger.V(2).Info("Unbound server-providing Pod", "name", providingPod.Name, "node", providingPod.Spec.NodeName, "gpuUUIDs", serverDat.GPUIDsStr, "newResourceVersion", echo.ResourceVersion)
 	} else {
 		logger.V(3).Info("Server-providing Pod remains unbound", "name", providingPod.Name, "resourceVersion", providingPod.ResourceVersion)
 	}
@@ -1018,14 +1028,14 @@ func (serverDat *serverData) getNominalServerProvidingPod(ctx context.Context, r
 		hasher := sha256.New()
 		hasher.Write(modifiedJSON)
 		hasher.Write([]byte(";gpus="))
-		hasher.Write([]byte(*serverDat.GPUIndicesStr))
+		hasher.Write([]byte(*serverDat.GPUIDsStr))
 		hasher.Write([]byte(";node="))
 		hasher.Write([]byte(reqPod.Spec.NodeName))
 		var modifiedHash [sha256.Size]byte
 		modifiedHashSl := hasher.Sum(modifiedHash[:0])
 		nominalHash := base64.RawStdEncoding.EncodeToString(modifiedHashSl)
 
-		logger.V(5).Info("Computed nominalHash", "nominalHash", nominalHash, "modifiedJSON", modifiedJSON, "gpus", *serverDat.GPUIndicesStr, "node", reqPod.Spec.NodeName)
+		logger.V(5).Info("Computed nominalHash", "nominalHash", nominalHash, "modifiedJSON", modifiedJSON, "gpus", *serverDat.GPUIDsStr, "node", reqPod.Spec.NodeName)
 
 		var pod = &corev1.Pod{}
 		// Decode back into Pod.

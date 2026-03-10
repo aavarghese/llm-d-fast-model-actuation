@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -99,25 +98,22 @@ const GPUMapName = "gpu-map"
 
 const GPUIndexName = "gpu"
 
+// GPUIndexFunc indexes pods by their GPU UUIDs (from the accelerators annotation).
+// This allows the controller to look up pods by GPU UUID for sleeper budget enforcement.
+// The index key format is "nodeName gpuUUID".
 func GPUIndexFunc(obj any) ([]string, error) {
 	pod := obj.(*corev1.Pod)
 	if len(pod.Annotations[nominalHashAnnotationKey]) == 0 || pod.Spec.NodeName == "" {
 		return []string{}, nil
 	}
-	isIdx, err := utils.GetInferenceServerContainerIndex(pod)
-	if err != nil {
+	// Use the accelerators annotation which contains GPU UUIDs
+	accelerators := pod.Annotations[api.AcceleratorsAnnotationName]
+	if accelerators == "" {
 		return []string{}, nil
 	}
-	isCtr := &pod.Spec.Containers[isIdx]
-	eIdx := slices.IndexFunc(isCtr.Env, func(e corev1.EnvVar) bool {
-		return e.Name == "CUDA_VISIBLE_DEVICES"
-	})
-	if eIdx < 0 || len(isCtr.Env[eIdx].Value) == 0 {
-		return []string{}, nil
-	}
-	visibleParts := strings.Split(isCtr.Env[eIdx].Value, ",")
-	keys, _ := utils.SliceMap(visibleParts, func(gpu string) (string, error) {
-		return pod.Spec.NodeName + " " + strings.Trim(gpu, " "), nil
+	uuidParts := strings.Split(accelerators, ",")
+	keys, _ := utils.SliceMap(uuidParts, func(uuid string) (string, error) {
+		return pod.Spec.NodeName + " " + strings.TrimSpace(uuid), nil
 	})
 	return keys, nil
 }
